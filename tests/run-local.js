@@ -69,6 +69,7 @@ const MOCK_ROOM = `(() => {
   /* ---------------- 1. Full game, three teams, two boards ---------------- */
   console.log('\n[1] Volles Spiel mit 3 Teams und 2 Boards');
   const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  await ctx.addInitScript(() => { window.QUIZ_ROOM_URL = ''; });
   const page = await ctx.newPage(); watch(page, 'main');
   await page.goto(BASE);
   await page.waitForTimeout(1700);
@@ -208,6 +209,7 @@ const MOCK_ROOM = `(() => {
   /* ---------------- 3. Sechs Teams auf Laptop-Bildschirm ---------------- */
   console.log('\n[3] Sechs Teams, 1366×768');
   const ctx3 = await browser.newContext({ viewport: { width: 1366, height: 768 } });
+  await ctx3.addInitScript(() => { window.QUIZ_ROOM_URL = ''; });
   const p3 = await ctx3.newPage(); watch(p3, 'six');
   await p3.goto(BASE);
   await p3.click('#tab-local');
@@ -235,6 +237,7 @@ const MOCK_ROOM = `(() => {
   /* ---------------- 4. Handy als Spielleitung ---------------- */
   console.log('\n[4] Spielleitung am Handy (simulierter Raum)');
   const ctx4 = await browser.newContext({ viewport: { width: 1366, height: 768 } });
+  await ctx4.addInitScript(() => { window.QUIZ_ROOM_URL = ''; });
   await ctx4.addInitScript(MOCK_ROOM);
   const tv = await ctx4.newPage(); watch(tv, 'tv');
   await tv.goto(BASE); await tv.waitForTimeout(300);

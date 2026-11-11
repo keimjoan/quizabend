@@ -176,6 +176,8 @@ textarea.text-in { padding: 10px 14px; min-height: 64px; resize: vertical; line-
 .banner { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px; padding: 14px 18px; border-radius: 14px; background: rgba(227,176,75,.12); box-shadow: inset 0 0 0 1px rgba(227,176,75,.5); }
 .banner p { flex: 1 1 300px; }
 .banner.warn { background: rgba(255,122,107,.1); box-shadow: inset 0 0 0 1px rgba(255,122,107,.5); }
+.roomlink { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-top: 10px; }
+.roomlink code { min-width: 0; overflow-wrap: anywhere; padding: 6px 10px; border-radius: 8px; background: var(--stage); color: var(--ink); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 15px; }
 .err { color: var(--bad); font-weight: 700; }
 .err:empty { display: none; }
 .field { display: grid; gap: 6px; }
@@ -594,7 +596,7 @@ const OCOLORS = ['#ff6352', '#56b6ff', '#ffd447', '#b994ff', '#ff9f43', '#ff79bd
 const KEYS = ['a', 'l', 'q', 'p', 'g', 'b'];
 const VALUES = [100, 200, 300, 400, 500];
 const MAX_TEAMS = 6, O_MAX = 12, BUZZ_MS = 20000, VOTE_MS = 30000, JUDGE_MS = 30000;
-const K = { prefs: 'quizabend.prefs.v1', custom: 'quizabend.custom.v1', game: 'quizabend.game.v1', played: 'quizabend.played.v1', me: 'quizabend.me.v1', online: 'quizabend.online.v1' };
+const K = { prefs: 'quizabend.prefs.v1', custom: 'quizabend.custom.v1', game: 'quizabend.game.v1', played: 'quizabend.played.v1', me: 'quizabend.me.v1', online: 'quizabend.online.v1', room: 'quizabend.room.v1' };
 
 const $ = (s, r = document) => r.querySelector(s);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -672,8 +674,13 @@ const sfx = (() => {
    Zustand
    ========================================================= */
 const ui = { mode: 'setup', editSel: null, keyCapture: -1, titleDone: false };
-// Online-Spiele gehen nur mit dem Raum von Claude. Ohne ihn (Webseite, Doppelklick) startet die Seite bei „Ein Bildschirm“.
-const HAS_ROOM = !!(window.claude && typeof window.claude.use === 'function');
+// Online-Spiele und „Handy als Spielleitung“ brauchen einen Raum: in Claude den von Claude, sonst den eigenen
+// Raum-Server (Ordner server/). Tests und andere Server setzen vorher window.QUIZ_ROOM_URL ('' schaltet ihn ab).
+// Ohne Raum startet die Seite bei „Ein Bildschirm“.
+const ROOM_SERVER = 'wss://quizabend-raum.quizabend-raum.workers.dev';
+const CLAUDE_ROOM = !!(window.claude && typeof window.claude.use === 'function');
+const ROOM_URL = CLAUDE_ROOM ? '' : String(('QUIZ_ROOM_URL' in window ? window.QUIZ_ROOM_URL : ROOM_SERVER) || '').replace(/\/+$/, '');
+const HAS_ROOM = CLAUDE_ROOM || (!!ROOM_URL && typeof WebSocket === 'function');
 let prefs = defaultPrefs();
 let custom = [];
 let game = null;        // Spiel an einem Bildschirm
@@ -1035,7 +1042,12 @@ function resumeHTML() {
     <button class="btn btn-plain" id="discard" data-act="discard">Verwerfen</button></div>`;
 }
 function phoneHint() {
-  return roomNs ? ' Oder sie öffnet diese Seite auf dem eigenen Handy und verbindet sich dort als Spielleitung. Dann steht die Lösung nur auf dem Handy.' : '';
+  return !roomNs ? '' : CLAUDE_ROOM ? ' Oder sie öffnet diese Seite auf dem eigenen Handy und verbindet sich dort als Spielleitung. Dann steht die Lösung nur auf dem Handy.'
+    : ' Oder sie öffnet den Raum-Link (siehe Adresszeile) auf dem eigenen Handy und verbindet sich dort als Spielleitung. Dann steht die Lösung nur auf dem Handy.';
+}
+/* Raum-Link zum Weitergeben (nur mit eigenem Raum-Server) */
+function roomLinkHTML() {
+  return `<span class="roomlink"><code>${esc(roomLink())}</code><button class="btn btn-plain btn-sm" data-act="copy-link">Link kopieren</button></span>`;
 }
 function joinHTML() {
   if (!roomNs) return '';
@@ -1047,13 +1059,15 @@ function joinHTML() {
 
 /* ---------- Online: Startseite ---------- */
 const INVITE_TEXT = 'So kommen deine Freunde ins Spiel: Öffne diese Seite in Claude im Browser, klicke auf „Teilen“ und lade jeden per E-Mail ein. Jeder braucht ein Claude-Konto. Ein öffentlicher Link reicht für Online-Spiele nicht. Danach öffnen deine Freunde die Seite angemeldet, wählen „Online, jeder am eigenen PC“ und treten deinem Spiel bei.';
+const inviteHTML = () => CLAUDE_ROOM ? esc(INVITE_TEXT)
+  : `So kommen deine Freunde ins Spiel: Schick ihnen diesen Link zu deinem Raum. Sie wählen dann „Online, jeder am eigenen PC“ und treten deinem Spiel bei. Ein Konto braucht niemand. ${roomLinkHTML()}`;
 function onlineStartHTML() {
   const saved = savedOnline ? `<div class="banner"><p><b>Dein Online-Spiel ist noch offen.</b> ${esc(joinDe(savedOnline.pl.map(p => p.n)))}.</p>
     <button class="btn btn-brass" id="o-resume" data-act="o-resume">Als Gastgeber weitermachen</button>
     <button class="btn btn-plain" id="o-discard" data-act="o-discard">Beenden</button></div>` : '';
   let body;
   if (roomState === 'pending') body = '<p class="hint">Verbindung wird aufgebaut …</p>';
-  else if (roomState !== 'ready') body = `<div class="banner warn"><p><b>Online-Spiele gehen bisher nur in der Claude-Version dieser Seite.</b> Dort braucht jeder ein Claude-Konto und eine Einladung. Hier spielt ihr an einem Bildschirm mit Spielleitung.</p>
+  else if (roomState !== 'ready') body = `<div class="banner warn"><p><b>Online-Spiele gehen hier nicht.</b> Öffne das Spiel unter https://keimjoan.github.io/quizabend/ oder spielt an einem Bildschirm mit Spielleitung.</p>
       <button class="btn btn-plain" data-act="tab" data-v="local">Stattdessen an einem Bildschirm spielen</button></div>`;
   else body = `<div class="field"><label for="me-name">Dein Name</label><input class="text-in" id="me-name" data-input="me-name" value="${esc(me.name)}" maxlength="20" autocomplete="nickname" placeholder="So sehen dich die anderen"></div>
       <p class="err" id="me-err" role="alert">${esc(on.err)}</p>
@@ -1068,7 +1082,7 @@ function onlineStartHTML() {
         <li>Sagt er „richtig“, sehen alle Antwort und Lösung und stimmen ab. Bei mindestens 50 Prozent dafür gibt es die Punkte, sonst werden die vollen Punkte abgezogen.</li>
         <li>Sagt er „falsch“, verliert er die Hälfte. Dann dürfen die anderen buzzern, jeder einmal. Wer zuerst drückt, antwortet und prüft sich genauso selbst.</li>
       </ol>
-      <p class="hint">${esc(INVITE_TEXT)}</p>
+      <p class="hint">${inviteHTML()}</p>
     </section>
   </div>`;
 }
@@ -1084,6 +1098,7 @@ function onlineGames() {
 }
 function openGamesHTML() {
   const list = onlineGames();
+  if (!list.length && !roomOk) return '<p class="hint">Verbindung wird aufgebaut …</p>';
   if (!list.length) return '<p class="hint">Gerade ist kein offenes Spiel zu sehen. Eröffne selbst eins oder warte, bis ein Freund seins eröffnet hat. Es taucht dann hier auf.</p>';
   return `<div class="games">${list.map(gm => {
     const mine = gm.pids.includes(me.pid), running = gm.ph !== 'lobby', can = !running || mine;
@@ -1348,7 +1363,8 @@ function openPhoneInfo() {
   const onx = hostConnected();
   openModal(`<h2 id="mt">Handy als Spielleitung</h2>
     <p>${onx ? 'Ein Handy ist als Spielleitung verbunden. Dort stehen die Lösungen, und alle Knöpfe funktionieren auch vom Handy aus.'
-      : 'Öffne diese Seite auf deinem Handy, angemeldet mit deinem Claude-Konto. Oben erscheint dann „Als Spielleitung verbinden“.'}</p>
+      : CLAUDE_ROOM ? 'Öffne diese Seite auf deinem Handy, angemeldet mit deinem Claude-Konto. Oben erscheint dann „Als Spielleitung verbinden“.'
+      : `Öffne diesen Link auf deinem Handy. Oben erscheint dann „Als Spielleitung verbinden“. ${roomLinkHTML()}`}</p>
     <p class="hint">Auf dem Handy siehst du die Lösung, bevor sie hier aufgedeckt wird. So bewertest du Antworten, ohne dass der große Bildschirm etwas verrät.</p>
     <div class="actions"><button class="btn btn-brass" data-act="modal-close">Verstanden</button></div>`);
 }
@@ -1864,7 +1880,7 @@ function oLobbyHTML(v) {
   return `<main class="lobby">
     <header class="lobby-head"><h1>Lobby</h1><p class="lead">Quizabend von ${esc(hostP ? hostP[1] : '…')}</p><span class="spacer"></span>
       <button class="btn btn-plain" data-act="o-leave">${isHost ? 'Spiel schließen' : 'Lobby verlassen'}</button></header>
-    ${isHost ? `<div class="banner"><p>${esc(INVITE_TEXT)}</p></div>` : ''}
+    ${isHost ? `<div class="banner"><p>${inviteHTML()}</p></div>` : ''}
     ${on.stale ? '<div class="banner warn"><p>Keine Verbindung zum Gastgeber. Wenn das so bleibt, wurde das Spiel vermutlich beendet.</p></div>' : ''}
     <div class="cols">
       <section class="panel" aria-labelledby="h-pl"><div class="panel-head"><h2 id="h-pl">Spieler</h2><span class="hint">${pl.length} von ${O_MAX}</span></div>${players}</section>
@@ -2151,6 +2167,11 @@ document.addEventListener('click', e => {
       } catch (ex) { err.textContent = ex.message; }
       break;
     }
+    case 'copy-link': {
+      const link = roomLink();
+      try { navigator.clipboard.writeText(link).then(() => toast('Link kopiert'), () => toast(link)); } catch (ex) { toast(link); }
+      break;
+    }
     case 'exp-copy': {
       const ta = $('#exp-text');
       const fallback = () => { ta.focus(); ta.select(); toast('Text ist markiert. Jetzt mit Strg+C kopieren.'); };
@@ -2287,18 +2308,132 @@ document.addEventListener('contextmenu', e => { if (e.target.closest && e.target
 function setPeek(onx) { const p = $('#peek-pop'); if (p) p.hidden = !onx; }
 
 /* =========================================================
-   Verbindung über Claude (Raum): Spielleitung am Handy und Online-Spiel
+   Verbindung (Raum von Claude oder eigener Raum-Server): Spielleitung am Handy und Online-Spiel
    ========================================================= */
 let roomNs = null, roomOk = false, roomState = 'none', peers = [], lastPresence = '';
 const remote = { game: null, view: null, at: 0, pending: false, tEnd: null };
 const PKEYS = ['role', 'game', 'label', 'ph', 'np', 'pids', 'info', 'pid', 'name'];
 
+/* ---------- Eigener Raum-Server (Ordner server/, läuft bei Cloudflare) ----------
+   Jeder Raum hat einen Code, der hinten im Link steht (…/quizabend/#k3x9p2). Wer den Link hat, ist im selben Raum.
+   Ohne Code im Link nimmt die Seite den zuletzt benutzten oder würfelt einen neuen. */
+let roomCodeNow = '';
+const okRoomCode = s => typeof s === 'string' && /^[a-z0-9]{4,16}$/.test(s);
+function hashRoomCode() { try { return decodeURIComponent(location.hash.slice(1)).trim().toLowerCase(); } catch (e) { return ''; } }
+function roomCode() {
+  let c = hashRoomCode();
+  if (!okRoomCode(c)) c = store.get(K.room);
+  if (!okRoomCode(c)) c = rid(6);
+  store.set(K.room, c);
+  if (location.hash !== '#' + c) { try { history.replaceState(null, '', '#' + c); } catch (e) { /* egal */ } }
+  return (roomCodeNow = c);
+}
+const roomLink = () => location.href.split('#')[0] + '#' + roomCodeNow;
+addEventListener('hashchange', () => {
+  const c = hashRoomCode();
+  if (!roomCodeNow || c === roomCodeNow) return;
+  if (okRoomCode(c)) { store.set(K.room, c); location.reload(); }
+  else { try { history.replaceState(null, '', '#' + roomCodeNow); } catch (e) { /* egal */ } }
+});
+
+/* Bietet dieselben Funktionen wie der Raum von Claude (emit, on, presence, onPeers, onConnection)
+   und verbindet sich nach Abbrüchen selbst neu. */
+function webRoom(url) {
+  const myId = rid(12), handlers = {}, peerFns = [], connFns = [];
+  const peerMap = new Map();
+  let ws = null, ok = false, mine = {}, tries = 0, lastMsg = 0, timer = null;
+  const bytes = s => new TextEncoder().encode(s).length;
+  const setPeer = (id, p, at) => peerMap.set(id, { presence: Object.freeze(p && typeof p === 'object' ? p : {}), updatedAt: at || Date.now() });
+  setPeer(myId, {});
+  const snap = () => [...peerMap].map(([id, v]) => Object.freeze({ peer: id, by: null, isMe: id === myId, sameTab: id === myId, kind: 'viewer', guest: false, presence: v.presence, updatedAt: v.updatedAt }));
+  const call = (fns, x) => fns.slice().forEach(fn => { try { fn(x); } catch (e) { console.error(e); } });
+  const notify = (joined, left, updated) => {
+    if (!joined.length && !left.length && !updated.length) return;
+    const ps = snap(), pick = ids => ps.filter(p => ids.includes(p.peer));
+    call(peerFns, { peers: ps, joined: pick(joined), left: left.map(id => ({ peer: id, presence: {} })), updated: pick(updated) });
+  };
+  const setOk = v => { if (ok !== v) { ok = v; call(connFns, v); } };
+  const send = m => { if (!ws || ws.readyState !== 1) return false; ws.send(JSON.stringify(m)); return true; };
+  const off = (list, fn) => () => { const i = list.indexOf(fn); if (i >= 0) list.splice(i, 1); };
+
+  function onMsg(ev) {
+    let m;
+    try { m = JSON.parse(ev.data); } catch (e) { return; }
+    if (!m || typeof m !== 'object') return;
+    lastMsg = Date.now();
+    if (m.t === 'hi') {
+      tries = 0;
+      const list = (Array.isArray(m.peers) ? m.peers : []).filter(p => p && typeof p.id === 'string' && p.id !== myId);
+      const now = new Set(list.map(p => p.id)), joined = [], left = [], updated = [];
+      for (const id of [...peerMap.keys()]) if (id !== myId && !now.has(id)) { peerMap.delete(id); left.push(id); }
+      for (const p of list) { (peerMap.has(p.id) ? updated : joined).push(p.id); setPeer(p.id, p.p, p.at); }
+      send({ t: 'presence', p: mine });
+      notify(joined, left, updated);
+      setOk(true);
+    } else if (m.t === 'peer' && typeof m.id === 'string' && m.id !== myId) {
+      const had = peerMap.has(m.id);
+      setPeer(m.id, m.p, m.at);
+      notify(had ? [] : [m.id], [], had ? [m.id] : []);
+    } else if (m.t === 'leave' && typeof m.id === 'string' && m.id !== myId) {
+      if (peerMap.delete(m.id)) notify([], [m.id], []);
+    } else if (m.t === 'emit' && typeof m.topic === 'string') {
+      call(handlers[m.topic] || [], { topic: m.topic, data: m.data, peer: m.from, by: null, isMe: false, sameTab: false, kind: 'viewer', guest: false });
+    }
+  }
+  function connect() {
+    clearTimeout(timer); timer = null;
+    let sock;
+    try { sock = new WebSocket(`${url}?id=${myId}`); } catch (e) { retry(); return; }
+    ws = sock; lastMsg = Date.now();
+    sock.onmessage = e => { if (ws === sock) onMsg(e); };
+    sock.onclose = () => { if (ws !== sock) return; ws = null; setOk(false); retry(); };
+  }
+  function retry() { clearTimeout(timer); timer = setTimeout(connect, Math.min(15000, 500 * 2 ** tries++) + Math.random() * 500); }
+  function drop() { const s = ws; ws = null; try { s.close(); } catch (e) { /* egal */ } setOk(false); retry(); }
+  const wake = () => { if (!ws) connect(); };
+  addEventListener('online', wake);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) wake(); });
+  // Lebenszeichen alle 25 Sekunden. Kommt eine Minute lang nichts zurück, neu verbinden.
+  setInterval(() => {
+    if (!ws || ws.readyState !== 1) return;
+    if (Date.now() - lastMsg > 60000) drop(); else send({ t: 'ping' });
+  }, 25000);
+  connect();
+
+  return {
+    emit(topic, data) {
+      let s;
+      try { s = JSON.stringify(data === undefined ? null : data); } catch (e) { return Promise.reject({ code: 'invalid_argument' }); }
+      if (bytes(s) > 4096) return Promise.reject({ code: 'invalid_argument', message: 'Nachricht zu groß' });
+      if (!send({ t: 'emit', topic, data: JSON.parse(s) })) return Promise.reject({ code: 'unavailable', message: 'Keine Verbindung' });
+      setTimeout(() => call(handlers[topic] || [], { topic, data: JSON.parse(s), peer: myId, by: null, isMe: true, sameTab: true, kind: 'viewer', guest: false }), 0);
+      return Promise.resolve();
+    },
+    on(topic, fn) { const list = (handlers[topic] = handlers[topic] || []); list.push(fn); return off(list, fn); },
+    presence(patch) {
+      const cur = Object.assign({}, mine);
+      for (const k in patch || {}) { if (patch[k] === null) delete cur[k]; else cur[k] = patch[k]; }
+      if (bytes(JSON.stringify(cur)) > 4096) return Promise.reject({ code: 'invalid_argument' });
+      mine = cur; setPeer(myId, cur);
+      send({ t: 'presence', p: cur });
+      notify([], [], [myId]);
+      return Promise.resolve();
+    },
+    peers: snap,
+    connected: () => ok,
+    onPeers(fn) { peerFns.push(fn); setTimeout(() => fn({ peers: snap(), joined: snap(), left: [], updated: [] }), 0); return off(peerFns, fn); },
+    onConnection(fn) { connFns.push(fn); setTimeout(() => fn(ok), 0); return off(connFns, fn); }
+  };
+}
+
 async function initRoom() {
-  const c = window.claude;
-  if (!c || typeof c.use !== 'function') { roomState = 'none'; refreshRoomUI(); return; }
-  roomState = 'pending';
   let ns = null;
-  try { ns = await c.use('room'); } catch (e) { ns = null; }
+  if (CLAUDE_ROOM) {
+    roomState = 'pending';
+    try { ns = await window.claude.use('room'); } catch (e) { ns = null; }
+  } else if (HAS_ROOM) {
+    try { ns = webRoom(`${ROOM_URL}/raum/${roomCode()}`); } catch (e) { ns = null; }
+  }
   if (!ns) { roomState = 'none'; refreshRoomUI(); return; }
   roomNs = ns; roomState = 'ready';
   try {

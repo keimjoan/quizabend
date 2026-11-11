@@ -8,12 +8,13 @@ Ein Punkte-Quiz im Browser zum Spielen mit Freunden: Boards mit 5 Kategorien × 
 - Reihenfolge in der Datei: Design-Tokens (`:root`) → CSS → Fragenkatalog (`RAW`, 25 Kategorien) → Grundlagen und Töne → Spiel an einem Bildschirm → Ansichten → Online-Spiel (Gastgeber, Spieler, Ansichten) → Eingaben → Verbindung (`initRoom`) → Start (`boot`).
 - `tools/serve.js` startet einen kleinen Webserver ohne Abhängigkeiten (`npm start`, dann http://localhost:8080).
 - Webapp-Dateien: `manifest.webmanifest`, `icon.svg` und die PNG-Icons daraus (`npm run icons`, Skript `tools/icons.js`), `sw.js` als Offline-Speicher (erst Netz, sonst Speicher). `sw.js` wird nur über https und außerhalb von Claude registriert.
+- `server/` ist der Raum-Server für den Online-Modus (Cloudflare Worker mit Durable Object, eigene `package.json` mit Wrangler).
+- `tests/` enthält zwei Playwright-Tests, die komplette Spiele durchspielen und die Punkte nachrechnen.
 
 ## Veröffentlichung
 
-- GitHub Pages aus dem Repo `keimjoan/quizabend`, Zweig `main`, Ordner `/` (mit `.nojekyll`). Adresse: https://keimjoan.github.io/quizabend/
-- Jeder Push auf `main` geht nach etwa einer Minute online. Dort läuft der Modus mit Spielleitung. Online-Modus und „Handy als Spielleitung“ brauchen den Raum von Claude und fehlen deshalb (siehe unten). Ohne Claude (`HAS_ROOM` falsch) öffnet die Seite immer den Reiter „Ein Bildschirm mit Spielleitung“.
-- `tests/` enthält zwei Playwright-Tests, die komplette Spiele durchspielen und die Punkte nachrechnen.
+- Seite: GitHub Pages aus dem Repo `keimjoan/quizabend`, Zweig `main`, Ordner `/` (mit `.nojekyll`). Adresse: https://keimjoan.github.io/quizabend/. Jeder Push auf `main` geht nach etwa einer Minute online.
+- Raum-Server: Cloudflare-Konto des Nutzers, Worker `quizabend-raum`, Adresse `wss://quizabend-raum.quizabend-raum.workers.dev` (steht als `ROOM_SERVER` in `index.html`). Neu bereitstellen: im Ordner `server` `npm install`, dann `npx wrangler login` (einmalig, der Nutzer klickt im Browser auf „Allow“) und `npm run deploy`. Kostenloser Tarif reicht.
 
 ## Spielregeln
 
@@ -32,16 +33,20 @@ Ein Punkte-Quiz im Browser zum Spielen mit Freunden: Boards mit 5 Kategorien × 
   3. Sagt er „richtig“: Alle anderen sehen Antwort und Lösung und stimmen ab. Mindestens 50 Prozent dafür ergibt die Punkte, sonst werden die vollen Punkte abgezogen. Danach ist die Frage vorbei. Stimmt niemand ab, zählt die Antwort.
   4. Sagt er „falsch“: halbe Punkte Abzug. Dann dürfen die anderen buzzern (20 Sekunden), jedes Team nur einmal pro Frage, der Fragewähler gar nicht. Wer zuerst buzzert, antwortet und wertet sich genauso selbst.
 
-## Wichtig: Der Online-Modus hängt an Claude
+## Verbindung: Raum von Claude oder eigener Raum-Server
 
-Das Spiel läuft als Claude-Artefakt (https://claude.ai/artifact/DPszKf9UP4SnfGMY6fZUin). Der Online-Modus nutzt die Artefakt-Fähigkeit `room` über `window.claude.use('room')`. Die gibt es nur, wenn die Seite in Claude geöffnet ist. Lokal im Browser funktioniert der Modus mit Spielleitung voll, der Online-Reiter zeigt nur einen Hinweis.
+Online-Modus und „Handy als Spielleitung“ brauchen einen Raum. `initRoom()` wählt ihn:
+- In Claude (Artefakt https://claude.ai/artifact/DPszKf9UP4SnfGMY6fZUin) die Fähigkeit `room` über `window.claude.use('room')`.
+- Sonst (GitHub Pages, `npm start`, Doppelklick) den eigenen Raum-Server über `webRoom()`. Freunde brauchen kein Konto.
+- Ohne beides (`HAS_ROOM` falsch, z. B. `window.QUIZ_ROOM_URL = ''` in den Tests) öffnet die Seite den Reiter „Ein Bildschirm mit Spielleitung“, der Online-Reiter zeigt einen Hinweis.
+
+Raum-Code: Mit eigenem Server steht hinten im Link ein Code (`…/quizabend/#k3x9p2`, `roomCode()`). Wer den Link hat, ist im selben Raum. So sehen Fremde auf der öffentlichen Seite keine fremden Spiele und können keinen fremden Bildschirm steuern. Ohne Code nimmt die Seite den zuletzt benutzten (`quizabend.room.v1`) oder würfelt einen neuen. Gastgeber-Lobby und Handy-Hinweis zeigen den Link mit „Link kopieren“.
 
 So ist die Verbindung gebaut:
 - Der Gastgeber hält den Spielstand (`on.og`) und verschickt eine kompakte Ansicht als Ereignis `ostate` (unter 4 KiB, siehe `oView()`).
 - Spieler senden Eingaben über ihr Präsenz-Objekt (`team`, `pick`, `ans`, `claim`, `buzz`, `pass`, `vote`, `nx`). Der Gastgeber liest sie in `oProcessPeers()` und wendet sie in `oInput()` an. Jede Eingabe trägt die Fragenummer `qn`, damit alte Eingaben nie doppelt zählen.
-- Benutzt werden nur diese Funktionen des Raums: `emit`, `on`, `presence`, `onPeers`, `onConnection`.
-
-Ziel des Nutzers für später: Das Spiel soll ohne Claude laufen, damit Freunde kein Claude-Konto brauchen. Dafür einen kleinen Server bauen (z. B. Node mit WebSocket) und in `initRoom()` einen Adapter einsetzen, der dieselben fünf Funktionen bereitstellt. Dann muss die restliche Spiellogik nicht geändert werden. Die Testdatei `tests/run-online.js` enthält bereits einen nachgebauten Raum (`MOCK`), der als Vorlage für die Schnittstelle dient.
+- Benutzt werden nur diese Funktionen des Raums: `emit`, `on`, `presence`, `onPeers`, `onConnection`. `webRoom()` bildet genau diese nach, die Spiellogik weiß nicht, welcher Raum dahinter steckt.
+- Der Raum-Server (`server/worker.js`) speichert nichts. Er leitet Ereignisse und Präsenz an alle anderen im Raum weiter, ein Durable Object pro Raum-Code. Jedes Gerät hat eine feste ID pro Seitenaufruf, bei Neuverbindung bleibt seine Präsenz erhalten. Lebenszeichen alle 25 Sekunden, nach einer Minute Stille verbindet `webRoom()` neu.
 
 ## Tests
 
@@ -52,7 +57,8 @@ npm test
 ```
 
 - `npm run test:local`: Spiel an einem Bildschirm, eigene Fragen, sechs Teams, Handy als Spielleitung.
-- `npm run test:online`: Gastgeber und zwei Spieler in getrennten Browsern, jeder für sich und in Teams.
+- `npm run test:online`: Gastgeber und zwei Spieler in getrennten Browsern, jeder für sich und in Teams, über den nachgebauten Raum (`MOCK`).
+- `npm run test:server`: derselbe Online-Test über den echten Raum-Server. Vorher im Ordner `server` `npm run dev` starten (http://127.0.0.1:8787). Nach Änderungen an `webRoom()` oder `server/` laufen lassen.
 - Bildschirmfotos landen in `shots/`. Nach jeder Änderung an Spielregeln oder Punkten beide Tests laufen lassen.
 
 ## Gestaltung

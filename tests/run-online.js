@@ -5,6 +5,24 @@ const fs = require('fs');
 const path = require('path');
 const { startServer } = require('../tools/serve');
 let BASE = '';
+// Mit --server ws://127.0.0.1:8787 laufen alle Browser über den echten Raum-Server (npm run dev im Ordner server)
+// statt über den nachgebauten Raum. Alle treten demselben Raum bei, der Code steht hinten im Link.
+const argi = process.argv.indexOf('--server');
+const ROOM_URL = argi > 0 ? process.argv[argi + 1] : '';
+const ROOM = 'test' + Math.random().toString(36).slice(2, 8);
+// Misst im echten Modus die Größe von Spielstand und Präsenz, wie es der nachgebaute Raum tut
+const MEASURE = url => {
+  window.QUIZ_ROOM_URL = url;
+  const send = WebSocket.prototype.send;
+  WebSocket.prototype.send = function (s) {
+    try {
+      const m = JSON.parse(s), n = x => new TextEncoder().encode(JSON.stringify(x)).length;
+      if (m.t === 'emit') window.__maxEmit = Math.max(window.__maxEmit || 0, n(m.data));
+      if (m.t === 'presence') window.__maxPresence = Math.max(window.__maxPresence || 0, n(m.p));
+    } catch (e) { /* kein JSON */ }
+    return send.call(this, s);
+  };
+};
 const SHOTS = path.join(__dirname, '..', 'shots');
 const VALUES = [100, 200, 300, 400, 500];
 const failures = [], errors = [];
@@ -64,6 +82,7 @@ const MOCK = `(() => {
   fs.mkdirSync(SHOTS, { recursive: true });
   const server = await startServer();
   BASE = server.url;
+  console.log(ROOM_URL ? `Echter Raum-Server: ${ROOM_URL}, Raum ${ROOM}` : 'Nachgebauter Raum');
   const browser = await chromium.launch();
   const metas = [];
   const relay = (fromPage, s) => {
@@ -73,8 +92,11 @@ const MOCK = `(() => {
   };
   async function newPlayer(tag, viewport) {
     const ctx = await browser.newContext({ viewport });
-    await ctx.addInitScript(MOCK);
-    await ctx.exposeBinding('__relayOut', ({ page }, s) => relay(page, s));
+    if (ROOM_URL) await ctx.addInitScript(MEASURE, ROOM_URL);
+    else {
+      await ctx.addInitScript(MOCK);
+      await ctx.exposeBinding('__relayOut', ({ page }, s) => relay(page, s));
+    }
     const page = await ctx.newPage();
     page.on('console', m => { if (m.type() === 'error') errors.push(`${tag} console: ${m.text()}`); });
     page.on('pageerror', e => errors.push(`${tag} pageerror: ${e.message}`));
@@ -85,7 +107,7 @@ const MOCK = `(() => {
       const old = meta.id; meta.id = null;
       for (const x of metas) if (x.page !== page && !x.page.isClosed()) x.page.evaluate(str => window.__relayIn && window.__relayIn(str), JSON.stringify({ kind: 'leave', from: old })).catch(() => {});
     });
-    await page.goto(BASE);
+    await page.goto(ROOM_URL ? BASE + '#' + ROOM : BASE);
     return page;
   }
   const hostState = () => host.evaluate(() => JSON.parse(localStorage.getItem('quizabend.online.v1')));
