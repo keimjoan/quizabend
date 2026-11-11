@@ -672,6 +672,8 @@ const sfx = (() => {
    Zustand
    ========================================================= */
 const ui = { mode: 'setup', editSel: null, keyCapture: -1, titleDone: false };
+// Online-Spiele gehen nur mit dem Raum von Claude. Ohne ihn (Webseite, Doppelklick) startet die Seite bei „Ein Bildschirm“.
+const HAS_ROOM = !!(window.claude && typeof window.claude.use === 'function');
 let prefs = defaultPrefs();
 let custom = [];
 let game = null;        // Spiel an einem Bildschirm
@@ -686,7 +688,7 @@ let savedOnline = null;
 function defaultPrefs() {
   return {
     teams: [{ name: '', color: 0, key: 'a' }, { name: '', color: 1, key: 'l' }], boards: 2, timer: 0, penalty: true, sound: true, off: [],
-    tab: 'online', oset: { mode: 'solo', nt: 2, tn: ['', '', '', '', '', ''], timer: 60, pen: true }
+    tab: HAS_ROOM ? 'online' : 'local', oset: { mode: 'solo', nt: 2, tn: ['', '', '', '', '', ''], timer: 60, pen: true }
   };
 }
 function loadPrefs() {
@@ -704,7 +706,7 @@ function loadPrefs() {
     penalty: p.penalty !== false,
     sound: p.sound !== false,
     off: Array.isArray(p.off) ? p.off.filter(x => typeof x === 'string') : [],
-    tab: p.tab === 'local' ? 'local' : 'online',
+    tab: p.tab === 'local' || !HAS_ROOM ? 'local' : 'online',
     oset: {
       mode: os.mode === 'teams' ? 'teams' : 'solo',
       nt: Number.isInteger(os.nt) ? clamp(os.nt, 2, 6) : 2,
@@ -2506,7 +2508,7 @@ function remoteHTML() {
    ========================================================= */
 function boot(data) {
   loadPrefs(); loadCustom(); loadMe();
-  roomState = (window.claude && typeof window.claude.use === 'function') ? 'pending' : 'none';
+  roomState = HAS_ROOM ? 'pending' : 'none';
   const so = store.get(K.online);
   if (so && so.id && so.host === me.pid && Array.isArray(so.pl) && so.ph !== 'gameEnd') savedOnline = so;
   if (data && data.og && data.og.host === me.pid) { oResume(data.og); }

@@ -12,7 +12,7 @@ Ein Punkte-Quiz im Browser zum Spielen mit Freunden: Boards mit 5 Kategorien × 
 ## Veröffentlichung
 
 - GitHub Pages aus dem Repo `keimjoan/quizabend`, Zweig `main`, Ordner `/` (mit `.nojekyll`). Adresse: https://keimjoan.github.io/quizabend/
-- Jeder Push auf `main` geht nach etwa einer Minute online. Dort läuft der Modus mit Spielleitung. Online-Modus und „Handy als Spielleitung“ brauchen den Raum von Claude und fehlen deshalb (siehe unten).
+- Jeder Push auf `main` geht nach etwa einer Minute online. Dort läuft der Modus mit Spielleitung. Online-Modus und „Handy als Spielleitung“ brauchen den Raum von Claude und fehlen deshalb (siehe unten). Ohne Claude (`HAS_ROOM` falsch) öffnet die Seite immer den Reiter „Ein Bildschirm mit Spielleitung“.
 - `tests/` enthält zwei Playwright-Tests, die komplette Spiele durchspielen und die Punkte nachrechnen.
 
 ## Spielregeln
