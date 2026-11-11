@@ -243,6 +243,8 @@ const MOCK_ROOM = `(() => {
   await tv.goto(BASE); await tv.waitForTimeout(300);
   await tv.click('#tab-local');
   await tv.click('#start'); await tv.waitForTimeout(300);
+  // Ein echtes Handy hat eigene Einstellungen und startet im Online-Reiter. Der Knopf muss auch dort zu sehen sein.
+  await tv.evaluate(() => { const p = JSON.parse(localStorage.getItem('quizabend.prefs.v1')); p.tab = 'online'; localStorage.setItem('quizabend.prefs.v1', JSON.stringify(p)); });
   const phone = await ctx4.newPage(); watch(phone, 'phone');
   await phone.setViewportSize({ width: 390, height: 844 });
   await phone.goto(BASE);

@@ -176,6 +176,8 @@ textarea.text-in { padding: 10px 14px; min-height: 64px; resize: vertical; line-
 .banner { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px; padding: 14px 18px; border-radius: 14px; background: rgba(227,176,75,.12); box-shadow: inset 0 0 0 1px rgba(227,176,75,.5); }
 .banner p { flex: 1 1 300px; }
 .banner.warn { background: rgba(255,122,107,.1); box-shadow: inset 0 0 0 1px rgba(255,122,107,.5); }
+#join-slot { display: grid; gap: 12px; }
+#join-slot:empty { display: none; }
 .roomlink { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-top: 10px; }
 .roomlink code { min-width: 0; overflow-wrap: anywhere; padding: 6px 10px; border-radius: 8px; background: var(--stage); color: var(--ink); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 15px; }
 .err { color: var(--bad); font-weight: 700; }
@@ -947,6 +949,7 @@ function setupHTML() {
       ${flaps('QUIZABEND', 'title-flaps')}
       <p>Ein Punkte-Quiz für Teams oder jeden für sich. Jedes Board hat fünf Kategorien mit je fünf Fragen von 100 bis 500 Punkten.</p>
     </header>
+    <div id="join-slot">${joinHTML()}</div>
     <div class="modetabs" role="tablist" aria-label="Spielart">
       <button class="modetab" role="tab" id="tab-online" aria-selected="${tab === 'online'}" data-act="tab" data-v="online"><b>Online, jeder am eigenen PC</b><span>Ohne Spielleitung. Jeder meldet sich mit seinem Namen an, tippt Antworten ein und prüft sie selbst. Die anderen kontrollieren per Abstimmung.</span></button>
       <button class="modetab" role="tab" id="tab-local" aria-selected="${tab === 'local'}" data-act="tab" data-v="local"><b>Ein Bildschirm mit Spielleitung</b><span>Alle schauen auf einen Bildschirm. Eine Person liest vor und bewertet, gebuzzert wird per Taste.</span></button>
@@ -970,8 +973,7 @@ function localSetupHTML() {
   const maxB = Math.floor(sel.length / 5);
   const boards = clamp(prefs.boards, 1, Math.max(1, maxB));
   const n = prefs.teams.length;
-  return `<div id="join-slot">${joinHTML()}</div>
-    ${resumeHTML()}
+  return `${resumeHTML()}
     <div class="cols">
       <div class="col">
         <section class="panel" aria-labelledby="h-teams">
@@ -2457,9 +2459,9 @@ function refreshRoomUI() {
       const gs = $('#games-slot');
       if (gs && roomState === 'ready') gs.innerHTML = openGamesHTML(); else render();
     } else {
-      const js = $('#join-slot'); if (js) js.innerHTML = joinHTML();
       const ph = $('#phone-hint'); if (ph) ph.textContent = phoneHint();
     }
+    const js = $('#join-slot'); if (js) js.innerHTML = joinHTML();
   } else if (ui.mode === 'game') {
     const dot = $('#t-phone .dot');
     if (!!roomNs !== !!$('#t-phone')) render();
