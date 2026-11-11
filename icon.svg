@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- App-Icon: cremefarbene Klappkarte mit Fragezeichen auf der grünen Tafel, Messing-Scharniere.
+       Randlos gefüllt und mit Abstand zum Rand, damit es auch als runde oder abgerundete Kachel passt. -->
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="0%" r="110%">
+      <stop offset="0" stop-color="#1b4a40"/>
+      <stop offset=".65" stop-color="#0b231e"/>
+    </radialGradient>
+  </defs>
+  <rect width="512" height="512" fill="url(#bg)"/>
+  <rect x="146" y="116" width="220" height="280" rx="26" fill="#f2e9d3"/>
+  <path d="M146 256H366V370a26 26 0 0 1-26 26H172a26 26 0 0 1-26-26Z" fill="#e2d5b4"/>
+  <path d="M206 206a50 50 0 1 1 72 45c-15 9-22 19-22 40" fill="none" stroke="#0b231e" stroke-width="34" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="256" cy="347" r="21" fill="#0b231e"/>
+  <rect x="146" y="252" width="220" height="8" fill="#0b231e"/>
+  <rect x="128" y="238" width="24" height="36" rx="7" fill="#e3b04b"/>
+  <rect x="360" y="238" width="24" height="36" rx="7" fill="#e3b04b"/>
+</svg>

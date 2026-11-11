@@ -7,6 +7,12 @@ Ein Punkte-Quiz im Browser zum Spielen mit Freunden: Boards mit 5 Kategorien × 
 - `index.html` ist das ganze Spiel: CSS, Fragenkatalog und JavaScript in einer Datei, ohne Build-Schritt und ohne Bibliotheken. Schriften kommen von Google Fonts (Big Shoulders, Atkinson Hyperlegible) mit Ersatzschriften.
 - Reihenfolge in der Datei: Design-Tokens (`:root`) → CSS → Fragenkatalog (`RAW`, 25 Kategorien) → Grundlagen und Töne → Spiel an einem Bildschirm → Ansichten → Online-Spiel (Gastgeber, Spieler, Ansichten) → Eingaben → Verbindung (`initRoom`) → Start (`boot`).
 - `tools/serve.js` startet einen kleinen Webserver ohne Abhängigkeiten (`npm start`, dann http://localhost:8080).
+- Webapp-Dateien: `manifest.webmanifest`, `icon.svg` und die PNG-Icons daraus (`npm run icons`, Skript `tools/icons.js`), `sw.js` als Offline-Speicher (erst Netz, sonst Speicher). `sw.js` wird nur über https und außerhalb von Claude registriert.
+
+## Veröffentlichung
+
+- GitHub Pages aus dem Repo `keimjoan/quizabend`, Zweig `main`, Ordner `/` (mit `.nojekyll`). Adresse: https://keimjoan.github.io/quizabend/
+- Jeder Push auf `main` geht nach etwa einer Minute online. Dort läuft der Modus mit Spielleitung. Online-Modus und „Handy als Spielleitung“ brauchen den Raum von Claude und fehlen deshalb (siehe unten).
 - `tests/` enthält zwei Playwright-Tests, die komplette Spiele durchspielen und die Punkte nachrechnen.
 
 ## Spielregeln

@@ -4,7 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#0b231e">
+<meta name="description" content="Punkte-Quiz für Freunde im Browser">
 <title>Quizabend</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="apple-mobile-web-app-title" content="Quizabend">
+<meta name="mobile-web-app-capable" content="yes">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders:opsz,wght@10..72,700..900&display=swap">
@@ -1045,7 +1051,7 @@ function onlineStartHTML() {
     <button class="btn btn-plain" id="o-discard" data-act="o-discard">Beenden</button></div>` : '';
   let body;
   if (roomState === 'pending') body = '<p class="hint">Verbindung wird aufgebaut …</p>';
-  else if (roomState !== 'ready') body = `<div class="banner warn"><p><b>Online-Spiele gehen nur in Claude.</b> Öffne diese Seite über deinen Claude-Link und sei dabei angemeldet. Deine Mitspieler brauchen ebenfalls ein Claude-Konto und eine Einladung zu dieser Seite.</p>
+  else if (roomState !== 'ready') body = `<div class="banner warn"><p><b>Online-Spiele gehen bisher nur in der Claude-Version dieser Seite.</b> Dort braucht jeder ein Claude-Konto und eine Einladung. Hier spielt ihr an einem Bildschirm mit Spielleitung.</p>
       <button class="btn btn-plain" data-act="tab" data-v="local">Stattdessen an einem Bildschirm spielen</button></div>`;
   else body = `<div class="field"><label for="me-name">Dein Name</label><input class="text-in" id="me-name" data-input="me-name" value="${esc(me.name)}" maxlength="20" autocomplete="nickname" placeholder="So sehen dich die anderen"></div>
       <p class="err" id="me-err" role="alert">${esc(on.err)}</p>
@@ -2513,6 +2519,10 @@ function boot(data) {
   initRoom();
   const hot = window.claude && window.claude.hot;
   if (hot && typeof hot.snapshot === 'function') hot.snapshot(() => ({ game, mode: ui.mode === 'game' ? 'game' : 'setup', og: on.role === 'host' ? on.og : null }));
+}
+/* Webapp im Netz: Offline-Speicher (sw.js). Nicht in Claude und nicht beim Öffnen per Doppelklick. */
+if ('serviceWorker' in navigator && location.protocol === 'https:' && !window.claude) {
+  navigator.serviceWorker.register('sw.js').catch(() => {});
 }
 const hot = window.claude && window.claude.hot;
 if (hot && typeof hot.ready === 'function') hot.ready(boot);

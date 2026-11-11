@@ -5,6 +5,7 @@
   "description": "Punkte-Quiz für Freunde im Browser",
   "scripts": {
     "start": "node tools/serve.js",
+    "icons": "node tools/icons.js",
     "test": "node tests/run-local.js && node tests/run-online.js",
     "test:local": "node tests/run-local.js",
     "test:online": "node tests/run-online.js"
