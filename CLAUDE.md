@@ -51,6 +51,13 @@ So ist die Verbindung gebaut:
 - Benutzt werden nur diese Funktionen des Raums: `emit`, `on`, `presence`, `onPeers`, `onConnection`. `webRoom()` bildet genau diese nach, die Spiellogik weiß nicht, welcher Raum dahinter steckt.
 - Der Raum-Server (`server/worker.js`) speichert nichts. Er leitet Ereignisse und Präsenz an alle anderen im Raum weiter, ein Durable Object pro Raum-Code. Jedes Gerät hat eine feste ID pro Seitenaufruf, bei Neuverbindung bleibt seine Präsenz erhalten. Lebenszeichen alle 25 Sekunden, nach einer Minute Stille verbindet `webRoom()` neu.
 
+## Kameras im Online-Spiel
+
+- Jeder im Online-Spiel (Lobby und Tafel) kann seine Kamera ein- und ausschalten (`camToggle()`, Knopf „Kamera einschalten“ bzw. Kamerasymbol in der Kopfzeile). Nur Bild, kein Ton, 320×240 mit höchstens 20 Bildern pro Sekunde und 200 kbit/s.
+- Die Bilder gehen per WebRTC direkt von Browser zu Browser, jeder mit jedem. Eine Verbindung entsteht, sobald einer von beiden die Kamera an hat (`camSync()`). Über den Raum laufen nur die Verbindungsdaten als Ereignis `rtc` mit Empfänger `to` und Spiel `g`, in der Präsenz steht `cam: 1`. Verhandlung nach dem Muster „perfect negotiation“, nur VP8, damit jede Nachricht unter 4 KiB bleibt.
+- Kostenlos: STUN von Cloudflare und Google (`RTC_ICE`, im Test `window.QUIZ_ICE = []`), kein TURN-Server. In manchen Netzen (Mobilfunk, Firmen-WLAN) kommt deshalb kein Bild an, dann steht „Keine Verbindung“ auf der Kachel. Das Spiel läuft davon unabhängig.
+- Die Kacheln liegen in einem festen Element (`camEl`), das nach jedem Neuzeichnen in `#cam-slot` wandert, damit die Videos weiterlaufen. Wer das Spiel verlässt, dessen Kamera geht aus.
+
 ## KI-Spielleiter
 
 - Vom Nutzer so entschieden: Jeder darf einen Raum eröffnen, aber wer die KI nutzt, zahlt sie selbst. Der Gastgeber trägt in der Lobby seinen eigenen Claude-API-Schlüssel ein. Im Code, im Repo und auf dem Raum-Server liegt kein Schlüssel.
@@ -69,7 +76,7 @@ npm test
 ```
 
 - `npm run test:local`: Spiel an einem Bildschirm, eigene Fragen, sechs Teams, Handy als Spielleitung.
-- `npm run test:online`: Gastgeber und zwei Spieler in getrennten Browsern, jeder für sich und in Teams, über den nachgebauten Raum (`MOCK`). Danach ein Spiel mit KI-Spielleiter gegen eine nachgestellte Claude-API und ein Spiel, das der Gastgeber moderiert.
+- `npm run test:online`: Gastgeber und zwei Spieler in getrennten Browsern, jeder für sich und in Teams, über den nachgebauten Raum (`MOCK`). Danach ein Spiel mit KI-Spielleiter gegen eine nachgestellte Claude-API und ein Spiel, das der Gastgeber moderiert. Zuletzt drei Browser mit Testkamera von Chromium, die sich gegenseitig sehen müssen.
 - `npm run test:server`: derselbe Online-Test über den echten Raum-Server. Vorher im Ordner `server` `npm run dev` starten (http://127.0.0.1:8787). Nach Änderungen an `webRoom()` oder `server/` laufen lassen.
 - Bildschirmfotos landen in `shots/`. Nach jeder Änderung an Spielregeln oder Punkten beide Tests laufen lassen.
 

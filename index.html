@@ -178,6 +178,18 @@ textarea.text-in { padding: 10px 14px; min-height: 64px; resize: vertical; line-
 .banner.warn { background: rgba(255,122,107,.1); box-shadow: inset 0 0 0 1px rgba(255,122,107,.5); }
 #join-slot { display: grid; gap: 12px; }
 #join-slot:empty { display: none; }
+/* Kameras im Online-Spiel */
+.camslot { flex-basis: 100%; min-width: 0; }
+.camslot:empty { display: none; }
+.cams { display: flex; flex-wrap: wrap; gap: clamp(6px, 1vmin, 10px); }
+.cam { position: relative; margin: 0; width: clamp(72px, min(15vmin, calc((100vw - 60px) / var(--n, 1) - 10px)), 200px); aspect-ratio: 4 / 3; border-radius: 10px; overflow: hidden; background: var(--plate-dark); box-shadow: 0 0 0 2px var(--c, var(--line)); }
+.cam video { display: block; width: 100%; height: 100%; object-fit: cover; }
+.cam.me video { transform: scaleX(-1); }
+.cam figcaption { position: absolute; left: 5px; bottom: 5px; max-width: calc(100% - 10px); display: flex; align-items: center; gap: 6px; padding: 2px 8px; border-radius: 999px; background: rgba(0,0,0,.6); font-size: clamp(12px, 1.6vmin, 16px); font-weight: 700; }
+.cam .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cam .camwait { position: absolute; inset: 0; display: grid; place-items: center; padding: 6px; text-align: center; color: var(--ink-dim); font-size: 13px; }
+.cam .camwait:empty { display: none; }
+.icon-btn.lit { color: var(--brass); }
 .kibox { justify-self: stretch; display: grid; gap: 10px; justify-items: start; padding: 14px 16px; border-radius: 12px; background: rgba(0,0,0,.2); box-shadow: inset 0 0 0 1px var(--line); }
 .kibox .text-in { width: 100%; }
 .kibox code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
@@ -636,6 +648,8 @@ const ICONS = {
   phone: '<rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M11 18h2"/>',
   sound: '<path d="M11 5 6 9H3v6h3l5 4V5Z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 5.5a9 9 0 0 1 0 13"/>',
   mute: '<path d="M11 5 6 9H3v6h3l5 4V5Z"/><path d="m16 9 5 6"/><path d="m21 9-5 6"/>',
+  cam: '<rect x="2.5" y="6" width="13" height="12" rx="2"/><path d="m15.5 10.5 6-3.5v10l-6-3.5"/>',
+  camoff: '<rect x="2.5" y="6" width="13" height="12" rx="2"/><path d="m15.5 10.5 6-3.5v10l-6-3.5"/><path d="m3 3 18 18"/>',
   full: '<path d="M4 9V4h5"/><path d="M20 9V4h-5"/><path d="M4 15v5h5"/><path d="M20 15v5h-5"/>',
   menu: '<circle cx="5" cy="12" r="1.7" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.7" fill="currentColor" stroke="none"/><circle cx="19" cy="12" r="1.7" fill="currentColor" stroke="none"/>',
   x: '<path d="M6 6l12 12"/><path d="M18 6 6 18"/>',
@@ -946,6 +960,7 @@ function postRender() {
     const pref = ui.mode === 'game' ? ($('#q-next') || $('#nb')) : ui.mode === 'online' ? $('#o-ans-in') : null;
     if (pref && !pref.disabled) pref.focus({ preventScroll: true });
   }
+  camSync();
   tickTimer();
 }
 
@@ -1915,6 +1930,185 @@ function kiBoxHTML() {
     <p class="hint">Der Schlüssel bleibt in diesem Browser und geht nur an Anthropic. Mitspieler und der Raum-Server bekommen ihn nicht.</p></div>`;
 }
 
+/* ---------- Online: Kameras ----------
+   Jeder im Online-Spiel kann seine Kamera einschalten. Die Bilder gehen per WebRTC direkt von Browser zu Browser,
+   jeder mit jedem, ohne Ton und in kleiner Auflösung. Über den Raum laufen nur die Verbindungsdaten
+   (Ereignis 'rtc' mit Empfänger 'to', Spiel 'g'), in der Präsenz steht 'cam: 1'. Kostenlose STUN-Server helfen beim
+   Verbinden. Ohne TURN-Server klappt es in manchen Netzen nicht, dann steht „Keine Verbindung“ auf dem Bild. */
+const RTC_ICE = Array.isArray(window.QUIZ_ICE) ? window.QUIZ_ICE : [{ urls: ['stun:stun.cloudflare.com:3478', 'stun:stun.l.google.com:19302'] }];
+const CAM_OK = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.RTCPeerConnection);
+const CAM_BITRATE = 200000;
+const cam = { stream: null, busy: false, pcs: new Map() };
+let camEl = null;
+
+const camGame = () => on.role === 'host' ? (on.og ? on.og.id : null) : on.role === 'player' ? on.gid : null;
+const camMe = () => { const p = peers.find(x => x.isMe); return p ? p.peer : ''; };
+const camPeers = gid => peers.filter(p => !p.isMe && !p.sameTab && p.presence && p.presence.game === gid && (p.presence.role === 'ohost' || p.presence.role === 'oplayer'));
+
+async function camToggle() {
+  if (cam.busy || !CAM_OK) return;
+  if (cam.stream) { camStop(); return; }
+  cam.busy = true; render();
+  try {
+    cam.stream = await navigator.mediaDevices.getUserMedia({ audio: false,
+      video: { width: { ideal: 320 }, height: { ideal: 240 }, frameRate: { ideal: 15, max: 20 }, facingMode: 'user' } });
+  } catch (e) {
+    cam.stream = null;
+    toast(e && e.name === 'NotAllowedError' ? 'Der Browser hat die Kamera nicht freigegeben. Erlaube sie in den Einstellungen dieser Seite.'
+      : e && e.name === 'NotFoundError' ? 'Keine Kamera gefunden.' : 'Die Kamera lässt sich gerade nicht einschalten. Ist sie in einem anderen Programm offen?');
+  }
+  cam.busy = false;
+  if (cam.stream && !camGame()) { camStop(); return; }
+  if (cam.stream) for (const c of cam.pcs.values()) camAddTracks(c);
+  updatePresence(true); camSync(); render();
+}
+function camStop() {
+  if (!cam.stream) return;
+  for (const c of cam.pcs.values()) for (const s of c.pc.getSenders()) if (s.track) { try { c.pc.removeTrack(s); } catch (e) { /* schon zu */ } }
+  cam.stream.getTracks().forEach(t => t.stop());
+  cam.stream = null;
+  updatePresence(true); camSync(); render();
+}
+/* Nur VP8: hält die Verbindungsdaten klein (unter 4 KiB pro Nachricht) */
+function camAddTracks(c) {
+  for (const t of cam.stream.getVideoTracks()) {
+    const s = c.pc.addTrack(t, cam.stream);
+    const tr = c.pc.getTransceivers().find(x => x.sender === s);
+    try {
+      const vp8 = RTCRtpReceiver.getCapabilities('video').codecs.filter(x => /vp8/i.test(x.mimeType));
+      if (tr && vp8.length && tr.setCodecPreferences) tr.setCodecPreferences(vp8);
+    } catch (e) { /* Browser kann das nicht, dann eben alle Formate */ }
+  }
+}
+function camLimit(pc) {
+  for (const s of pc.getSenders()) {
+    if (!s.track) continue;
+    try {
+      const p = s.getParameters();
+      if (!p.encodings || !p.encodings.length) continue;
+      if (p.encodings[0].maxBitrate === CAM_BITRATE) continue;
+      p.encodings[0].maxBitrate = CAM_BITRATE;
+      s.setParameters(p).catch(() => {});
+    } catch (e) { /* egal */ }
+  }
+}
+
+/* Verbindet sich mit jedem im selben Spiel, sobald einer von beiden die Kamera an hat. Schickt nur, wer eine Kamera hat. */
+function camSync() {
+  const gid = camGame(), meId = camMe(), want = new Set();
+  if (!gid && cam.stream) { cam.stream.getTracks().forEach(t => t.stop()); cam.stream = null; }
+  if (gid && CAM_OK && meId && roomNs) for (const p of camPeers(gid)) if (cam.stream || p.presence.cam) want.add(p.peer);
+  for (const [id, c] of cam.pcs) if (!want.has(id) || c.gid !== gid) camDrop(id);
+  for (const id of want) if (!cam.pcs.has(id)) camConnect(id, gid);
+  camDraw();
+}
+function camDrop(id) {
+  const c = cam.pcs.get(id); if (!c) return;
+  cam.pcs.delete(id);
+  try { c.pc.close(); } catch (e) { /* schon zu */ }
+}
+/* „Perfekte Verhandlung“ nach WebRTC-Muster: Beide Seiten dürfen anbieten, bei einer Kollision gibt die höfliche nach. */
+function camConnect(id, gid) {
+  const pc = new RTCPeerConnection({ iceServers: RTC_ICE });
+  const c = { pc, gid, polite: camMe() > id, making: false, ignore: false, stream: null, state: 'new', q: Promise.resolve() };
+  c.send = data => { if (roomNs) roomNs.emit('rtc', Object.assign({ g: gid, to: id }, data)).catch(() => {}); };
+  cam.pcs.set(id, c);
+  pc.onicecandidate = e => { if (e.candidate) c.send({ c: e.candidate.toJSON() }); };
+  pc.onnegotiationneeded = async () => {
+    try { c.making = true; await pc.setLocalDescription(); c.send({ d: pc.localDescription.toJSON() }); }
+    catch (e) { /* nächster Versuch beim nächsten Anlass */ }
+    finally { c.making = false; }
+  };
+  pc.onsignalingstatechange = () => { if (pc.signalingState === 'stable') camLimit(pc); };
+  pc.ontrack = e => {
+    c.stream = e.streams[0] || new MediaStream([e.track]);
+    e.track.onunmute = camDraw; e.track.onmute = camDraw; e.track.onended = camDraw;
+    camDraw();
+  };
+  pc.onconnectionstatechange = () => {
+    c.state = pc.connectionState;
+    if (c.state === 'failed' && pc.restartIce) pc.restartIce();
+    camDraw();
+  };
+  if (cam.stream) camAddTracks(c);
+  return c;
+}
+function onRtc(msg) {
+  if (!msg || msg.isMe || msg.sameTab) return;
+  const d = msg.data, gid = camGame();
+  if (!d || typeof d !== 'object' || !gid || d.g !== gid || d.to !== camMe() || typeof msg.peer !== 'string') return;
+  let c = cam.pcs.get(msg.peer);
+  if (!c) {
+    if (!d.d || d.d.type !== 'offer' || !CAM_OK || !camPeers(gid).some(p => p.peer === msg.peer)) return;
+    c = camConnect(msg.peer, gid);
+  }
+  // Nachrichten einer Verbindung strikt nacheinander abarbeiten
+  c.q = c.q.then(() => camSignal(c, d)).catch(() => {});
+}
+async function camSignal(c, d) {
+  const pc = c.pc;
+  if (pc.signalingState === 'closed') return;
+  if (d.d && (d.d.type === 'offer' || d.d.type === 'answer') && typeof d.d.sdp === 'string') {
+    const collide = d.d.type === 'offer' && (c.making || pc.signalingState !== 'stable');
+    c.ignore = !c.polite && collide;
+    if (c.ignore) return;
+    await pc.setRemoteDescription(d.d);
+    if (d.d.type === 'offer') { await pc.setLocalDescription(); c.send({ d: pc.localDescription.toJSON() }); }
+  } else if (d.c && typeof d.c === 'object') {
+    try { await pc.addIceCandidate(d.c); } catch (e) { if (!c.ignore) throw e; }
+  }
+}
+
+/* Name und Lampenfarbe zu einer Spieler-ID, wie auf der Tafel */
+function camWho(pid, fallback) {
+  const v = on.view, pl = (v && v.pl) || [], i = pl.findIndex(p => p[0] === pid), p = pl[i];
+  if (!p) return { n: fallback || '…', c: 'var(--ink-dim)', i: 99 };
+  let c = 'var(--ink-dim)';
+  if (v.ph === 'lobby') { if (v.set.mode === 'teams') { if (p[2] != null && COLORS[p[2]]) c = COLORS[p[2]].hex; } else c = OCOLORS[i % OCOLORS.length]; }
+  else if (p[2] != null && v.teams && v.teams[p[2]]) c = col(v.teams[p[2]][1]);
+  return { n: p[1], c, i };
+}
+/* Die Kamerabilder liegen in einem festen Element, das nach jedem Neuzeichnen in #cam-slot wandert.
+   So laufen die Videos weiter und werden nicht bei jedem Klick neu aufgebaut. */
+function camDraw() {
+  if (!camEl) { camEl = document.createElement('div'); camEl.className = 'cams'; camEl.setAttribute('role', 'group'); camEl.setAttribute('aria-label', 'Kameras'); }
+  const gid = camGame(), tiles = [];
+  if (gid && cam.stream) tiles.push({ key: 'me', stream: cam.stream, who: camWho(me.pid, me.name), me: true, state: 'connected' });
+  if (gid) for (const [id, c] of cam.pcs) {
+    const p = peers.find(x => x.peer === id);
+    if (p && p.presence && p.presence.cam) tiles.push({ key: id, stream: c.stream, who: camWho(p.presence.pid, p.presence.name), state: c.state });
+  }
+  tiles.sort((a, b) => a.who.i - b.who.i);
+  const old = new Map([...camEl.children].map(el => [el.dataset.key, el]));
+  tiles.forEach((t, n) => {
+    let el = old.get(t.key); old.delete(t.key);
+    if (!el) {
+      el = document.createElement('figure'); el.className = 'cam'; el.dataset.key = t.key;
+      el.innerHTML = '<video autoplay playsinline muted></video><span class="camwait"></span><figcaption><span class="lamp"></span><span class="nm"></span></figcaption>';
+    }
+    const vid = el.querySelector('video');
+    if (vid.srcObject !== (t.stream || null)) vid.srcObject = t.stream || null;
+    el.style.setProperty('--c', t.who.c);
+    el.classList.toggle('me', !!t.me);
+    el.querySelector('.nm').textContent = t.who.n + (t.me ? ' (du)' : '');
+    const live = !!t.stream && t.stream.getVideoTracks().some(x => x.readyState === 'live' && !x.muted);
+    el.querySelector('.camwait').textContent = live ? '' : t.state === 'failed' ? 'Keine Verbindung' : 'Verbindet …';
+    if (camEl.children[n] !== el) camEl.insertBefore(el, camEl.children[n] || null);
+  });
+  for (const el of old.values()) el.remove();
+  camEl.style.setProperty('--n', Math.max(1, tiles.length));
+  const slot = tiles.length ? document.getElementById('cam-slot') : null;
+  if (slot) { if (camEl.parentNode !== slot) slot.appendChild(camEl); }
+  else if (camEl.parentNode) camEl.remove();
+  for (const v of camEl.querySelectorAll('video')) if (v.srcObject && v.paused) v.play().catch(() => {});
+}
+function camBtn(big) {
+  if (!CAM_OK || !roomNs) return '';
+  const onNow = !!cam.stream, label = cam.busy ? 'Kamera startet …' : onNow ? 'Kamera ausschalten' : 'Kamera einschalten';
+  if (big) return `<button class="btn btn-plain" id="o-cam" data-act="cam" aria-pressed="${onNow}" ${cam.busy ? 'disabled' : ''}>${icon(onNow ? 'cam' : 'camoff')} ${label}</button>`;
+  return `<button class="icon-btn${onNow ? ' lit' : ''}" id="t-cam" data-act="cam" aria-pressed="${onNow}" aria-label="${label}" title="${label}" ${cam.busy ? 'disabled' : ''}>${icon(onNow ? 'cam' : 'camoff')}</button>`;
+}
+
 /* ---------- Online: Spieler ---------- */
 const INPUT_KEYS = { team: null, pick: null, ans: null, pass: null, vote: null, nx: null, claim: null, buzz: null };
 function ensureUniquePid() {
@@ -2043,7 +2237,8 @@ function oLobbyHTML(v) {
     </div>` : `<div class="startbar"><p>Warte, bis ${esc(hostP ? hostP[1] : 'der Gastgeber')} das Spiel startet.</p></div>`;
   return `<main class="lobby">
     <header class="lobby-head"><h1>Lobby</h1><p class="lead">Quizabend von ${esc(hostP ? hostP[1] : '…')}</p><span class="spacer"></span>
-      <button class="btn btn-plain" data-act="o-leave">${isHost ? 'Spiel schließen' : 'Lobby verlassen'}</button></header>
+      ${camBtn(true)}<button class="btn btn-plain" data-act="o-leave">${isHost ? 'Spiel schließen' : 'Lobby verlassen'}</button></header>
+    <div id="cam-slot" class="camslot"></div>
     ${isHost ? `<div class="banner"><p>${inviteHTML()}</p></div>` : ''}
     ${on.stale ? '<div class="banner warn"><p>Keine Verbindung zum Gastgeber. Wenn das so bleibt, wurde das Spiel vermutlich beendet.</p></div>' : ''}
     <div class="cols">
@@ -2124,9 +2319,10 @@ function oTopbarHTML(v, myT, T) {
   }
   const meC = myT != null && v.teams ? T(myT).c : 'var(--ink-dim)';
   return `<header class="topbar"><span class="brand">Quizabend</span><div class="meta">${meta}</div>${pill}
-    <div class="tools"><span class="mechip" style="--c:${meC}"><span class="lamp"></span>${v.set.mod && on.role === 'host' ? 'Du moderierst' : `Du spielst als <b>${esc(me.name)}</b>`}</span>${soundBtn()}${fullBtn()}
+    <div class="tools"><span class="mechip" style="--c:${meC}"><span class="lamp"></span>${v.set.mod && on.role === 'host' ? 'Du moderierst' : `Du spielst als <b>${esc(me.name)}</b>`}</span>${camBtn()}${soundBtn()}${fullBtn()}
     <button class="icon-btn" id="t-menu" data-act="o-menu" aria-label="Menü" title="Menü">${icon('menu')}</button></div>
     ${on.stale ? '<div class="banner warn conn"><p>Keine Verbindung zum Gastgeber. Wenn das so bleibt, wurde das Spiel vermutlich beendet.</p><button class="btn btn-plain btn-sm" data-act="o-leave">Zur Startseite</button></div>' : ''}
+    <div id="cam-slot" class="camslot"></div>
   </header>`;
 }
 function oBoardHTML(v, myT, T) {
@@ -2400,6 +2596,7 @@ document.addEventListener('click', e => {
     case 'o-resume': if (savedOnline) oResume(savedOnline); break;
     case 'o-discard': confirmBox('Online-Spiel beenden?', 'Das gespeicherte Online-Spiel wird gelöscht.', 'Beenden', () => { savedOnline = null; store.set(K.online, null); render(); }); break;
     case 'o-leave': oLeaveAsk(); break;
+    case 'cam': camToggle(); break;
     case 'o-leave-ask': closeModal(); oLeaveAsk(); break;
     case 'o-set': oSet(el.dataset.k, ['mode', 'km', 'wert'].includes(el.dataset.k) ? el.dataset.v : Number(el.dataset.v)); break;
     case 'o-mod': { const c = on.view && on.view.cur; if (!c) break; on.sent = `m${c.qn}-${c.vi}`; oAct('mod', { q: c.qn, i: c.vi, ok: el.dataset.ok === '1' }); break; }
@@ -2512,7 +2709,7 @@ function setPeek(onx) { const p = $('#peek-pop'); if (p) p.hidden = !onx; }
    ========================================================= */
 let roomNs = null, roomOk = false, roomState = 'none', peers = [], lastPresence = '';
 const remote = { game: null, view: null, at: 0, pending: false, tEnd: null };
-const PKEYS = ['role', 'game', 'label', 'ph', 'np', 'pids', 'info', 'pid', 'name'];
+const PKEYS = ['role', 'game', 'label', 'ph', 'np', 'pids', 'info', 'pid', 'name', 'cam'];
 
 /* ---------- Eigener Raum-Server (Ordner server/, läuft bei Cloudflare) ----------
    Jeder Raum hat einen Code, der hinten im Link steht (…/quizabend/#k3x9p2). Wer den Link hat, ist im selben Raum.
@@ -2647,6 +2844,7 @@ async function initRoom() {
     ns.on('state', onStateMsg, () => {});
     ns.on('hello', onHello, () => {});
     ns.on('ostate', onOState, () => {});
+    ns.on('rtc', onRtc, () => {});
   } catch (e) { roomNs = null; roomState = 'none'; refreshRoomUI(); return; }
   updatePresence(true);
   refreshRoomUI();
@@ -2674,8 +2872,8 @@ function updatePresence(force) {
   else if (on.role === 'host' && on.og) {
     const g = on.og;
     p = { role: 'ohost', game: g.id, pid: me.pid, label: `Quizabend von ${me.name || 'Gastgeber'}`.slice(0, 80), ph: g.ph === 'lobby' ? 'lobby' : 'running', np: g.pl.length, pids: g.pl.map(x => x.id),
-      info: g.ph === 'lobby' ? '' : g.ph === 'gameEnd' ? 'Endstand' : `Board ${g.bi + 1} von ${g.boards.length}` };
-  } else if (on.role === 'player' && on.gid) p = { role: 'oplayer', game: on.gid, pid: me.pid, name: me.name };
+      info: g.ph === 'lobby' ? '' : g.ph === 'gameEnd' ? 'Endstand' : `Board ${g.bi + 1} von ${g.boards.length}`, cam: cam.stream ? 1 : 0 };
+  } else if (on.role === 'player' && on.gid) p = { role: 'oplayer', game: on.gid, pid: me.pid, name: me.name, cam: cam.stream ? 1 : 0 };
   else p = { role: 'idle' };
   const full = {};
   for (const k of PKEYS) full[k] = k in p ? p[k] : null;
@@ -2703,6 +2901,7 @@ function onPeersChange(ch) {
     else if ([...(ch.joined || []), ...(ch.updated || [])].some(p => p.presence && p.presence.role === 'oplayer' && p.presence.game === on.og.id)) oBroadcast();
   }
   if (ui.mode !== 'online') refreshRoomUI();
+  camSync();
 }
 setInterval(() => { if (on.role === 'host' && on.og && oTick()) oBump(); }, 300);
 setInterval(() => {

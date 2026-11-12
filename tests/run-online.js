@@ -83,7 +83,8 @@ const MOCK = `(() => {
   const server = await startServer();
   BASE = server.url;
   console.log(ROOM_URL ? `Echter Raum-Server: ${ROOM_URL}, Raum ${ROOM}` : 'Nachgebauter Raum');
-  const browser = await chromium.launch();
+  // Testkamera statt echter Kamera, Freigabe ohne Nachfrage
+  const browser = await chromium.launch({ args: ["--use-fake-ui-for-media-stream", "--use-fake-device-for-media-stream"] });
   const metas = [];
   const relay = (fromPage, s) => {
     const m = JSON.parse(s);
@@ -97,6 +98,7 @@ const MOCK = `(() => {
       await ctx.addInitScript(MOCK);
       await ctx.exposeBinding('__relayOut', ({ page }, s) => relay(page, s));
     }
+    await ctx.addInitScript(() => { window.QUIZ_ICE = []; }); // keine STUN-Server im Test, die Browser finden sich lokal
     const page = await ctx.newPage();
     // Im KI-Test scheitern Anfragen an die nachgestellte API mit Absicht (falscher Schlüssel, Ausfall)
     page.on('console', m => { if (m.type() === 'error' && !(tag.startsWith('ki-') && /Failed to load resource/.test(m.text()))) errors.push(`${tag} console: ${m.text()}`); });
@@ -494,6 +496,66 @@ const MOCK = `(() => {
   await mm.waitForSelector('button.tile');
   g = await mState();
   assert(g.turn === 1, 'Danach ist Max dran');
+
+  // ---------- [9] Kameras: Bilder gehen per WebRTC direkt von Browser zu Browser (Chromium mit Testkamera) ----------
+  console.log('\n[9] Online mit Kameras');
+  for (const p of [mh, ml, mm]) await p.close();
+  const cPlayer = async (tag, name, join) => {
+    const p = await newPlayer(tag, { width: 1280, height: 800 });
+    await p.waitForSelector('#me-name'); await p.fill('#me-name', name);
+    if (join) { await p.waitForSelector('[data-act="o-join"]'); await p.click('[data-act="o-join"]'); }
+    return p;
+  };
+  const ch = await cPlayer('cam-host', 'Joan', false);
+  await ch.click('#o-create'); await ch.waitForSelector('.lobby');
+  const cl = await cPlayer('cam-lea', 'Lea', true), cm = await cPlayer('cam-max', 'Max', true);
+  await ch.waitForFunction(() => document.querySelectorAll('.pchip').length === 3, null, { timeout: 5000 });
+  // Laufen alle n Bilder (Testkamera liefert echte Einzelbilder)?
+  const camsLive = (p, n) => p.waitForFunction(k => {
+    const vs = [...document.querySelectorAll('#cam-slot .cam video')];
+    return vs.length === k && vs.every(v => v.videoWidth > 0 && !v.paused);
+  }, n, { timeout: 15000 });
+  const camNames = p => p.$$eval('#cam-slot .cam .nm', els => els.map(e => e.textContent).join(','));
+
+  await ch.click('#o-cam');
+  await camsLive(ch, 1);
+  assert((await camNames(ch)) === 'Joan (du)', 'Gastgeber sieht sein eigenes Bild');
+  await cl.click('#o-cam');
+  await camsLive(cm, 2);
+  assert((await camNames(cm)) === 'Joan,Lea', 'Max ohne Kamera sieht Joan und Lea: ' + await camNames(cm));
+  await camsLive(ch, 2); await camsLive(cl, 2);
+  assert((await camNames(cl)) === 'Joan,Lea (du)', 'Lea sieht Joan und sich selbst');
+  assert((await cm.textContent('#o-cam')).includes('Kamera einschalten'), 'Bei Max bleibt die Kamera aus, bis er sie einschaltet');
+  await ch.screenshot({ path: `${SHOTS}/70-kamera-lobby.png` });
+
+  // Spielstart: Die Bilder laufen auf der Tafel weiter, auch wenn sie neu gezeichnet wird
+  while ((await ch.evaluate(() => JSON.parse(localStorage.getItem('quizabend.online.v1')).set.boards)) > 1) await ch.click('#ob-minus');
+  await ch.click('#o-start');
+  for (const p of [ch, cl, cm]) await p.waitForSelector('.board', { timeout: 5000 });
+  await camsLive(cm, 2);
+  const t0 = await cm.evaluate(() => [...document.querySelectorAll('#cam-slot video')].map(v => v.currentTime));
+  await cm.waitForTimeout(1200);
+  const t1 = await cm.evaluate(() => [...document.querySelectorAll('#cam-slot video')].map(v => v.currentTime));
+  assert(t1.every((t, i) => t > t0[i]), 'Auf der Tafel laufen die Bilder weiter');
+  assert(await cm.isVisible('#t-cam') && await cm.isVisible('.board'), 'Kamera-Knopf in der Kopfzeile, Tafel bleibt sichtbar');
+  await cm.screenshot({ path: `${SHOTS}/71-kamera-tafel.png` });
+
+  // Max schaltet seine Kamera auch ein, Lea schaltet ihre aus
+  await cm.click('#t-cam');
+  await camsLive(ch, 3); await camsLive(cl, 3);
+  assert((await camNames(ch)) === 'Joan (du),Lea,Max', 'Alle drei Bilder beim Gastgeber: ' + await camNames(ch));
+  await cl.click('#t-cam');
+  await camsLive(ch, 2); await camsLive(cm, 2);
+  assert(!(await camNames(cm)).includes('Lea'), 'Leas Bild verschwindet bei den anderen');
+  assert(await cl.evaluate(() => !document.querySelector('.cam.me')), 'Lea sieht ihr eigenes Bild nicht mehr');
+  await camsLive(cl, 2);
+  // Max verlässt das Spiel: Kamera aus, sein Bild verschwindet
+  await cm.click("#t-menu"); await cm.click("[data-act=\"o-leave-ask\"]");
+  await cm.waitForSelector(".setup", { timeout: 5000 });
+  await camsLive(ch, 1);
+  assert(await cm.evaluate(() => !document.querySelector('.cam')), 'Nach dem Verlassen ist Max ohne Kamera');
+  const cEmit = Math.max(...await Promise.all([ch, cl].map(p => p.evaluate(() => window.__maxEmit || 0))));
+  assert(cEmit > 0 && cEmit < 4096, `Verbindungsdaten bleiben unter 4 KiB pro Nachricht (${cEmit} Bytes)`);
 
   await browser.close();
   server.close();

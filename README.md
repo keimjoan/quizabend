@@ -5,6 +5,7 @@ Punkte-Quiz für Freunde: Teams oder jeder für sich, 5 Kategorien × 5 Fragen p
 ## Spielen
 - Im Netz: https://keimjoan.github.io/quizabend/ – auf Handy, Tablet oder PC über „Zum Startbildschirm hinzufügen“ bzw. „App installieren“ als App speichern. Nach dem ersten Öffnen startet sie auch ohne Internet.
 - Wertung der Antworten im Online-Spiel (Einstellung in der Lobby): selbst bewerten und abstimmen, der Gastgeber moderiert (sieht die Lösungen, entscheidet per Klick und spielt nicht mit) oder ein KI-Spielleiter.
+- Kameras im Online-Spiel: Jeder kann in der Lobby oder über das Kamerasymbol oben seine Kamera einschalten. Die Bilder gehen direkt von Browser zu Browser, kostenlos und ohne Ton. In manchen Netzen (Mobilfunk, Firmen-WLAN) kommt kein Bild an. Am besten klappt es mit bis zu etwa 8 Kameras.
 - KI-Spielleiter (optional): Der Gastgeber kann in der Lobby unter „Wertung der Antworten“ Claude die Antworten prüfen lassen. Dafür trägt er seinen eigenen Claude-API-Schlüssel von platform.claude.com ein und zahlt die Runde selbst. Der Schlüssel bleibt in seinem Browser.
 - Doppelklick auf `index.html` öffnet das Spiel im Browser. Der Modus mit Spielleitung funktioniert so direkt.
 - Oder mit Node.js: `npm start`, dann http://localhost:8080 öffnen.
