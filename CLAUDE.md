@@ -32,6 +32,7 @@ Ein Punkte-Quiz im Browser zum Spielen mit Freunden: Boards mit 5 Kategorien × 
   2. Nur der Fragewähler (bei Teams sein Team) sieht danach die Musterlösung und wertet sich selbst (30 Sekunden, sonst falsch).
   3. Sagt er „richtig“: Alle anderen sehen Antwort und Lösung und stimmen ab. Mindestens 50 Prozent dafür ergibt die Punkte, sonst werden die vollen Punkte abgezogen. Danach ist die Frage vorbei. Stimmt niemand ab, zählt die Antwort.
   4. Sagt er „falsch“: halbe Punkte Abzug. Dann dürfen die anderen buzzern (20 Sekunden), jedes Team nur einmal pro Frage, der Fragewähler gar nicht. Wer zuerst buzzert, antwortet und wertet sich genauso selbst.
+- KI-Spielleiter (Einstellung „Wertung der Antworten“ in der Lobby, Standard ist aus): Statt Schritt 2 bis 4 prüft Claude die getippte Antwort gegen die Musterlösung. Richtig: volle Punkte, die Frage ist vorbei, ohne Abstimmung. Falsch: halbe Punkte Abzug, dann buzzern die anderen wie in Schritt 4, und auch die Buzzer-Antwort prüft die KI. Den Kommentar der KI sehen alle erst nach der Auflösung. Antwortet die KI nicht (Ausfall, abgelehnter Schlüssel, 25 Sekunden), läuft diese eine Antwort nach den normalen Regeln.
 
 ## Verbindung: Raum von Claude oder eigener Raum-Server
 
@@ -48,6 +49,15 @@ So ist die Verbindung gebaut:
 - Benutzt werden nur diese Funktionen des Raums: `emit`, `on`, `presence`, `onPeers`, `onConnection`. `webRoom()` bildet genau diese nach, die Spiellogik weiß nicht, welcher Raum dahinter steckt.
 - Der Raum-Server (`server/worker.js`) speichert nichts. Er leitet Ereignisse und Präsenz an alle anderen im Raum weiter, ein Durable Object pro Raum-Code. Jedes Gerät hat eine feste ID pro Seitenaufruf, bei Neuverbindung bleibt seine Präsenz erhalten. Lebenszeichen alle 25 Sekunden, nach einer Minute Stille verbindet `webRoom()` neu.
 
+## KI-Spielleiter
+
+- Vom Nutzer so entschieden: Jeder darf einen Raum eröffnen, aber wer die KI nutzt, zahlt sie selbst. Der Gastgeber trägt in der Lobby seinen eigenen Claude-API-Schlüssel ein. Im Code, im Repo und auf dem Raum-Server liegt kein Schlüssel.
+- Der Schlüssel bleibt im Browser des Gastgebers (`kiKey`): in `sessionStorage`, mit „Auf diesem Gerät merken“ zusätzlich in `localStorage` (`quizabend.ki.v1`). Er darf nie in `on.og`, in die Präsenz oder in ein Ereignis geraten. Der Test prüft das.
+- Der Aufruf geht per `fetch` direkt aus dem Browser an `https://api.anthropic.com/v1/messages` (keine Bibliothek, siehe `kiAsk()`): Köpfe `x-api-key`, `anthropic-version: 2026-10-21` und `anthropic-dangerous-direct-browser-access: true`, Modell `claude-opus-5-5` (`KI_MODEL`), `output_config` mit `effort: "low"` und festem JSON-Format `{richtig, kommentar}`, dazu `fallbacks: "default"` mit Beta-Kopf (bei Fehler 400 noch einmal ohne). Die Schlüsselprüfung in der Lobby fragt `GET /v1/models/claude-opus-5-5` ab.
+- Im Spielstand gibt es dafür den Zustand `ki` (`cur.st`) zwischen `answer` und `resolved` bzw. `buzz`. `kiStart()` läuft auch aus `oTick()`, damit die Prüfung ein Neuladen des Gastgebers übersteht. `kiFallback()` stellt auf `judge` um und setzt `cur.kf` für den Hinweis.
+- Die Antwort des Spielers ist für die KI Spielmaterial, keine Anweisung (steht in `KI_SYSTEM`), spitze Klammern werden entfernt.
+- Test [7] in `tests/run-online.js` stellt Anthropic mit `context.route` nach. Ein echter Aufruf mit gültigem Schlüssel kostet Geld und ist nicht automatisch getestet.
+
 ## Tests
 
 ```
@@ -57,7 +67,7 @@ npm test
 ```
 
 - `npm run test:local`: Spiel an einem Bildschirm, eigene Fragen, sechs Teams, Handy als Spielleitung.
-- `npm run test:online`: Gastgeber und zwei Spieler in getrennten Browsern, jeder für sich und in Teams, über den nachgebauten Raum (`MOCK`).
+- `npm run test:online`: Gastgeber und zwei Spieler in getrennten Browsern, jeder für sich und in Teams, über den nachgebauten Raum (`MOCK`). Danach ein Spiel mit KI-Spielleiter gegen eine nachgestellte Claude-API.
 - `npm run test:server`: derselbe Online-Test über den echten Raum-Server. Vorher im Ordner `server` `npm run dev` starten (http://127.0.0.1:8787). Nach Änderungen an `webRoom()` oder `server/` laufen lassen.
 - Bildschirmfotos landen in `shots/`. Nach jeder Änderung an Spielregeln oder Punkten beide Tests laufen lassen.
 

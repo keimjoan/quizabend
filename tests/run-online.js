@@ -98,7 +98,8 @@ const MOCK = `(() => {
       await ctx.exposeBinding('__relayOut', ({ page }, s) => relay(page, s));
     }
     const page = await ctx.newPage();
-    page.on('console', m => { if (m.type() === 'error') errors.push(`${tag} console: ${m.text()}`); });
+    // Im KI-Test scheitern Anfragen an die nachgestellte API mit Absicht (falscher Schlüssel, Ausfall)
+    page.on('console', m => { if (m.type() === 'error' && !(tag.startsWith('ki-') && /Failed to load resource/.test(m.text()))) errors.push(`${tag} console: ${m.text()}`); });
     page.on('pageerror', e => errors.push(`${tag} pageerror: ${e.message}`));
     const meta = { page, id: null, tag };
     metas.push(meta);
@@ -294,6 +295,129 @@ const MOCK = `(() => {
   const maxEmit = await host.evaluate(() => window.__maxEmit || 0);
   const maxPres = await lea.evaluate(() => window.__maxPresence || 0);
   assert(maxEmit < 4096 && maxPres < 4096, `Nachrichten unter 4 KiB (Spielstand ${maxEmit} Bytes, Präsenz ${maxPres} Bytes)`);
+
+  // ---------- [7] KI-Spielleiter: Anthropic wird nachgestellt, der Gastgeber bringt seinen eigenen Schlüssel mit ----------
+  console.log('\n[7] Online mit KI-Spielleiter (nachgestellte Claude-API)');
+  for (const p of [host, lea, max]) await p.close();
+  const TEST_KEY = 'sk-ant-test-' + 'q'.repeat(40);
+  const kiCalls = [], kiFrom = new Set();
+  let kiMode = 'ok';
+  const cors = { 'access-control-allow-origin': '*', 'access-control-allow-headers': '*', 'access-control-allow-methods': 'GET,POST,OPTIONS' };
+  const json = (route, status, body) => route.fulfill({ status, headers: cors, contentType: 'application/json', body: JSON.stringify(body) });
+  const kiRoute = tag => async route => {
+    const req = route.request(), h = req.headers();
+    if (req.method() === 'OPTIONS') return route.fulfill({ status: 204, headers: cors });
+    kiFrom.add(tag);
+    if (h['x-api-key'] !== TEST_KEY) return json(route, 401, { type: 'error', error: { type: 'authentication_error', message: 'invalid x-api-key' } });
+    if (req.url().endsWith('/v1/models/claude-opus-5-5')) return json(route, 200, { type: 'model', id: 'claude-opus-5-5', display_name: 'Claude Opus 5.5' });
+    const body = JSON.parse(req.postData());
+    kiCalls.push({ headers: h, body, url: req.url() });
+    if (kiMode === 'down') return json(route, 500, { type: 'error', error: { type: 'api_error', message: 'kaputt' } });
+    const text = body.messages[0].content;
+    const sol = /<musterloesung>([\s\S]*?)<\/musterloesung>/.exec(text)[1], said = /<antwort_des_spielers>([\s\S]*?)<\/antwort_des_spielers>/.exec(text)[1];
+    const richtig = said.trim().toLowerCase() === sol.trim().toLowerCase();
+    return json(route, 200, { id: 'msg_test', type: 'message', role: 'assistant', model: body.model, stop_reason: 'end_turn', usage: { input_tokens: 1, output_tokens: 1 },
+      content: [{ type: 'thinking', thinking: '', signature: 'x' }, { type: 'text', text: JSON.stringify({ richtig, kommentar: richtig ? 'Genau richtig.' : `Leider nein, gesucht war ${sol}.` }) }] });
+  };
+  const kiPlayer = async (tag, name) => {
+    const p = await newPlayer(tag, { width: 1280, height: 800 });
+    await p.context().route('https://api.anthropic.com/**', kiRoute(tag));
+    await p.waitForSelector('#me-name'); await p.fill('#me-name', name);
+    return p;
+  };
+  const kh = await kiPlayer('ki-host', 'Joan');
+  await kh.click('#o-create'); await kh.waitForSelector('.lobby');
+  const kl = await kiPlayer('ki-lea', 'Lea');
+  await kl.waitForSelector('[data-act="o-join"]'); await kl.click('[data-act="o-join"]');
+  await kh.waitForFunction(() => document.querySelectorAll('.pchip').length === 2, null, { timeout: 5000 });
+  while ((await kh.evaluate(() => JSON.parse(localStorage.getItem('quizabend.online.v1')).set.boards)) > 1) await kh.click('#ob-minus');
+
+  // Einschalten, Start ohne Schlüssel, falsche Schlüssel, richtiger Schlüssel
+  await kh.click('#oki-1');
+  await kh.waitForSelector('#ki-key');
+  await kl.waitForSelector('text=Wertung der Antworten: KI-Spielleiter');
+  await kh.click('#o-start'); await kh.waitForTimeout(300);
+  assert(await kh.isVisible('.lobby') && (await kh.textContent('#toast')).includes('API-Schlüssel'), 'Ohne Schlüssel startet das Spiel mit KI nicht');
+  await kh.fill('#ki-key', 'abc'); await kh.click('#ki-check');
+  assert((await kh.textContent('#ki-err')).includes('sk-ant-'), 'Unsinn im Schlüsselfeld wird gleich abgelehnt');
+  await kh.fill('#ki-key', 'sk-ant-falsch-' + 'x'.repeat(30)); await kh.click('#ki-check');
+  await kh.waitForFunction(() => /lehnt diesen Schlüssel ab/.test(document.querySelector('#ki-err').textContent), null, { timeout: 5000 });
+  assert(!(await kh.isVisible('#ki-ok')), 'Ein Schlüssel, den Anthropic ablehnt, wird nicht übernommen');
+  await kh.fill('#ki-key', TEST_KEY); await kh.click('#ki-check');
+  await kh.waitForSelector('#ki-ok', { timeout: 5000 });
+  await kh.screenshot({ path: `${SHOTS}/50-ki-lobby.png`, fullPage: true });
+  const kept = await kh.evaluate(() => [sessionStorage.getItem('quizabend.ki.v1'), localStorage.getItem('quizabend.ki.v1')]);
+  assert(kept[0] === TEST_KEY && kept[1] === null, 'Schlüssel liegt nur für diesen Tab im Browser des Gastgebers');
+  assert(!(await kh.textContent('.kibox')).includes(TEST_KEY.slice(0, -4)), 'Der Schlüssel wird nicht im Klartext angezeigt');
+
+  const kState = () => kh.evaluate(() => JSON.parse(localStorage.getItem('quizabend.online.v1')));
+  const kSol = async (c, r) => (await kState()).boards[0].cats[c].qs[r].a;
+  const kAnswer = async (p, text) => { await p.waitForSelector('#o-ans-in'); await p.fill('#o-ans-in', text); await p.press('#o-ans-in', 'Enter'); };
+  await kh.click('#o-start');
+  for (const p of [kh, kl]) await p.waitForSelector('.board', { timeout: 5000 });
+
+  // Frage 1: Joan antwortet richtig. Die KI wertet, es gibt weder Selbstbewertung noch Abstimmung.
+  await kh.click('#tile-0-0');
+  await kh.waitForSelector('text=Danach prüft der KI-Spielleiter die Antwort.');
+  await kAnswer(kh, (await kSol(0, 0)).toUpperCase());
+  await kh.waitForSelector('#o-next', { timeout: 8000 });
+  g = await kState();
+  assert(JSON.stringify(g.sc) === '[100,0]' && g.cur.win === 0 && g.cur.ans[0].ki === 1, 'KI wertet richtig: Joan +100, ohne Abstimmung: ' + g.sc);
+  await kl.waitForSelector('.kinote');
+  assert((await kl.textContent('.kinote')).includes('Genau richtig.') && (await kl.textContent('.verdict .res')) === 'richtig', 'Alle sehen Urteil und Kommentar der KI');
+  await kl.screenshot({ path: `${SHOTS}/51-ki-resolved.png` });
+  const call = kiCalls[0];
+  assert(call.url.endsWith('/v1/messages') && call.headers['anthropic-version'] === '2026-10-21' && call.headers['anthropic-dangerous-direct-browser-access'] === 'true', 'Anfrage geht mit den richtigen Köpfen an die Messages-API');
+  assert(call.body.model === 'claude-opus-5-5' && call.body.output_config.format.type === 'json_schema' && call.body.output_config.effort === 'low' && /Spielleiter/.test(call.body.system), 'Anfrage: Modell, festes JSON-Format und Spielleiter-Anweisung');
+  await kl.click('#o-next');
+
+  // Frage 2: Lea liegt falsch (−100), Joan buzzert und liegt richtig (+200). Der Kommentar erscheint erst nach der Auflösung.
+  await kl.waitForSelector('button.tile'); await kl.click('#tile-0-1');
+  await kAnswer(kl, 'Quatsch <b>mit</b> Soße');
+  await kh.waitForSelector('#o-buzz', { timeout: 8000 });
+  assert((await kh.$$('.kinote')).length === 0 && !(await kh.isVisible('.answer')), 'Beim Buzzern sind Kommentar und Lösung noch verdeckt');
+  assert(!/[<>]/.test(/<antwort_des_spielers>([\s\S]*?)<\/antwort_des_spielers>/.exec(kiCalls[kiCalls.length - 1].body.messages[0].content)[1]), 'Spitze Klammern in der Antwort kommen nicht bei der KI an');
+  await kh.click('#o-buzz');
+  await kAnswer(kh, await kSol(0, 1));
+  await kh.waitForSelector('#o-next', { timeout: 8000 });
+  g = await kState();
+  assert(JSON.stringify(g.sc) === '[300,-100]' && g.cur.win === 0, 'KI wertet falsch und richtig: Lea −100, Joan +200: ' + g.sc);
+  assert((await kh.$$('.kinote')).length === 2 && (await kh.textContent('.kinote')).includes('Leider nein'), 'Nach der Auflösung stehen beide Kommentare da');
+  await kh.click('#o-next');
+
+  // Frage 3: Anthropic fällt aus. Die Antwort wird wie ohne KI bewertet (selbst und per Abstimmung).
+  kiMode = 'down';
+  await kh.waitForSelector('button.tile'); await kh.click('#tile-0-2');
+  await kAnswer(kh, 'Irgendwas');
+  await kl.waitForSelector('#o-ki-wait');
+  await kh.waitForSelector('#o-claim-yes', { timeout: 12000 });
+  assert(await kh.isVisible('#o-ki-off'), 'KI nicht erreichbar: Hinweis und Selbstbewertung wie bisher');
+  await kh.click('#o-claim-yes');
+  await kl.waitForSelector('#o-yes'); await kl.click('#o-yes');
+  await kh.waitForSelector('#o-next');
+  g = await kState();
+  assert(JSON.stringify(g.sc) === '[600,-100]' && !g.cur.ans[0].ki, 'Rückfall zählt wie eine normale Abstimmung: ' + g.sc);
+  kiMode = 'ok';
+  await kh.click('#o-next');
+
+  // Gastgeber lädt neu: Der Schlüssel ist noch da, die KI wertet weiter.
+  await kl.waitForSelector('button.tile');
+  await kh.reload();
+  await kh.waitForSelector('#o-resume'); await kh.click('#o-resume');
+  await kh.waitForSelector('.board');
+  await kl.waitForSelector('button.tile', { timeout: 15000 }); await kl.click('#tile-0-3');
+  await kAnswer(kl, await kSol(0, 3));
+  await kl.waitForSelector('#o-next', { timeout: 15000 });
+  g = await kState();
+  assert(JSON.stringify(g.sc) === '[600,300]', 'Nach dem Neuladen des Gastgebers wertet die KI weiter: ' + g.sc);
+
+  // Der Schlüssel verlässt den Browser des Gastgebers nur in Richtung Anthropic
+  const leak = await kh.evaluate(k => Object.keys(localStorage).filter(n => (localStorage.getItem(n) || '').includes(k)), TEST_KEY);
+  const seen = await kl.evaluate(k => document.documentElement.outerHTML.includes(k) || Object.keys(localStorage).some(n => (localStorage.getItem(n) || '').includes(k)) || Object.keys(sessionStorage).some(n => (sessionStorage.getItem(n) || '').includes(k)), TEST_KEY);
+  assert(leak.length === 0 && !seen, 'Der Schlüssel steht weder im Spielstand noch bei den Mitspielern');
+  assert(kiFrom.has('ki-host') && !kiFrom.has('ki-lea') && kiCalls.length >= 5, `Nur der Gastgeber ruft Anthropic auf (${kiCalls.length} Bewertungen)`);
+  const kEmit = await kh.evaluate(() => window.__maxEmit || 0);
+  assert(kEmit > 0 && kEmit < 4096, `Spielstand mit KI-Kommentaren bleibt unter 4 KiB (${kEmit} Bytes)`);
 
   await browser.close();
   server.close();
