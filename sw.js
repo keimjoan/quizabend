@@ -1,8 +1,8 @@
 // Offline-Speicher für die Webapp im Netz (GitHub Pages). In Claude und per Doppelklick läuft er nicht.
 // Eigene Dateien: erst aus dem Netz, sonst aus dem Speicher. So kommt jede neue Version sofort an,
 // und das Spiel startet trotzdem ohne Internet. Schriften von Google: einmal laden, danach aus dem Speicher.
-const CACHE = 'quizabend-v1';
-const CORE = ['./', './index.html', './manifest.webmanifest', './icon.svg', './icon-192.png', './icon-512.png', './apple-touch-icon.png'];
+const CACHE = 'quizabend-v2';
+const CORE = ['./', './index.html', './boards.html', './manifest.webmanifest', './icon.svg', './icon-192.png', './icon-512.png', './apple-touch-icon.png'];
 const FONT_HOSTS = ['fonts.googleapis.com', 'fonts.gstatic.com'];
 
 self.addEventListener('install', e => {

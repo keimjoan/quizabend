@@ -201,9 +201,76 @@ const MOCK_ROOM = `(() => {
   await page.click('[data-act="modal-close"]');
   await page.click('#ed-close');
   assert(await page.isVisible('#cat-' + custom[0].id), 'Eigene Kategorie erscheint in der Auswahl');
-  await page.click('#cat-none');
+  await page.click('#cats-none');
   assert(await page.isDisabled('#start'), 'Ohne Kategorien kein Start');
-  await page.click('#cat-all');
+  await page.click('#cats-all');
+
+  /* ---------------- 2b. Eigene Boards: Vorlagen, Import, Reihenfolge ---------------- */
+  console.log('\n[2b] Eigene Boards');
+  const VORL = path.join(__dirname, '..', 'vorlagen');
+  const ownB = () => page.evaluate(() => JSON.parse(localStorage.getItem('quizabend.boards.v1') || '[]'));
+  const bImport = async (files, text) => {
+    await page.click('#ownb-import');
+    if (files) { await page.setInputFiles('#bimp-file', files); await page.waitForFunction(() => document.querySelector('#bimp-text').value || document.querySelector('#bimp-err').textContent); }
+    if (text != null) await page.fill('#bimp-text', text);
+    await page.click('#bimp-run');
+    await page.waitForTimeout(150);
+    const err = await page.isVisible('#bimp-err') ? await page.textContent('#bimp-err') : '';
+    if (err) await page.click('[data-act="modal-close"]');
+    return err;
+  };
+  assert(await page.getAttribute('#link-boards', 'href') === 'boards.html', 'Startseite verlinkt die Seite mit Vorlagen und Anleitung');
+  let bErr = await bImport(path.join(VORL, 'quizabend-board-vorlage.xlsx'));
+  assert(bErr.includes('Kategorie „Kategorie 1“, 100 Punkte: Die Frage fehlt'), 'Leere Excel-Vorlage: Fehlermeldung nennt die Stelle: ' + bErr);
+  bErr = await bImport(path.join(VORL, 'quizabend-board-beispiel.xlsx'));
+  let ob = await ownB();
+  assert(!bErr && ob.length === 1 && ob[0].name === 'Beispiel: Allgemeinwissen' && ob[0].cats.map(c => c.name).join(',') === 'Geografie,Geschichte,Naturwissenschaft,Weltraum,Sport', 'Beispiel-Board aus Excel importiert ' + bErr);
+  // Eingefügte Zellen wie aus Google Sheets: zwei Boards, Namen nur in der ersten Zeile, Zeilen ungeordnet, Zelle mit Zeilenumbruch
+  const rowsTSV = [['Board', 'Kategorie', 'Punkte', 'Frage', 'Antwort']];
+  ['Party A', 'Party B'].forEach(bn => [1, 2, 3, 4, 5].forEach(k => [500, 100, 300, 200, 400].forEach((p, j) =>
+    rowsTSV.push([k === 1 && j === 0 ? bn : '', j === 0 ? `${bn} K${k}` : '', String(p), p === 300 && k === 1 ? '"Zwei\nZeilen"' : `${bn} K${k} F${p}`, `A${p}`]))));
+  bErr = await bImport(null, rowsTSV.map(r => r.join('\t')).join('\n'));
+  ob = await ownB();
+  assert(!bErr && ob.length === 3 && ob[1].name === 'Party A' && ob[2].name === 'Party B', 'Zwei Boards aus eingefügten Zellen ' + bErr);
+  assert(ob[1].cats[0].qs.map(x => x.a).join(',') === 'A100,A200,A300,A400,A500' && ob[1].cats[0].qs[2].q === 'Zwei\nZeilen', 'Fragen nach Punkten sortiert, Zeilenumbruch in der Zelle bleibt');
+  // CSV mit Semikolon (deutsches Excel), ohne Board-Spalte: Name kommt aus dem Dateinamen
+  const csv = ['Kategorie;Punkte;Frage;Antwort', ...[1, 2, 3, 4, 5].flatMap(k => VALUES.map((p, j) => `${j ? '' : 'CSV ' + k};${p};Frage ${k}/${p};Antwort ${p}`))].join('\r\n');
+  bErr = await bImport({ name: 'mein-csv-board.csv', mimeType: 'text/csv', buffer: Buffer.from('﻿' + csv) });
+  ob = await ownB();
+  assert(!bErr && ob.length === 4 && ob[3].name === 'mein csv board', 'CSV mit Semikolon importiert, Name aus dem Dateinamen ' + bErr);
+  bErr = await bImport(null, rowsTSV.slice(0, 21).map(r => r.join('\t')).join('\n'));
+  assert(bErr.includes('hat 4 Kategorien'), 'Board mit zu wenigen Kategorien wird abgelehnt: ' + bErr);
+  bErr = await bImport(null, '{"boards": [{"name": "Halb", "kategorien": []}]}');
+  assert(bErr.includes('genau fünf'), 'JSON-Board ohne Kategorien wird abgelehnt');
+  bErr = await bImport(path.join(VORL, 'quizabend-board-beispiel.json'));
+  ob = await ownB();
+  assert(!bErr && ob.length === 5, 'Beispiel-Board als JSON importiert');
+  // Auswahl: CSV-Board und JSON-Board abwählen, Excel-Beispiel löschen. Bleiben Party A und Party B.
+  await page.click(`#ownb-${ob[3].id}`); await page.click(`#ownb-${ob[4].id}`);
+  await page.click(`#ownb-del-${ob[0].id}`); await page.click('[data-act="modal-ok"]');
+  ob = await ownB();
+  assert(ob.length === 4 && ob.filter(b => b.on).map(b => b.name).join(',') === 'Party A,Party B', 'Abwählen und Löschen');
+  await page.click('#cats-none');
+  assert(!(await page.isDisabled('#start')) && (await page.textContent('.startbar .hint')).includes('Deine 2 eigenen Boards kommen zuerst'), 'Nur eigene Boards, ohne Kategorien: Start geht');
+  assert(await page.isDisabled('#b-plus') && await page.isDisabled('#b-minus'), 'Ohne Kategorien genau so viele Boards wie eigene');
+  await page.screenshot({ path: `${SHOTS}/09b-own-boards.png`, fullPage: true });
+  await page.click('#cats-all');
+
+  await page.click('#b-plus');
+  await page.click('#start');
+  await page.waitForSelector('.board');
+  s = await state(page);
+  assert(s.boards.length === 3 && s.boards[0].cats[0].name === 'Party A K1' && s.boards[1].cats[4].name === 'Party B K5' && !s.boards[2].cats[0].name.startsWith('Party'), 'Eigene Boards zuerst und in Reihenfolge, danach ein zufälliges');
+  assert(s.boards[0].cats[0].qs[0].a === 'A100', 'Board spielt die eigenen Fragen');
+  await page.click('#t-menu'); await page.click('[data-act="new-setup-ask"]'); await page.click('[data-act="modal-ok"]');
+  // Seite mit Vorlagen: alle Downloads sind da
+  const help = await ctx.newPage(); watch(help, 'boards');
+  await help.goto(BASE.replace(/index\.html$/, 'boards.html'));
+  const links = await help.$$eval('a[download]', els => els.map(a => a.href));
+  const codes = await Promise.all(links.map(u => help.request.get(u).then(r => r.status())));
+  assert(links.length >= 5 && codes.every(c => c === 200), `Anleitungsseite: ${links.length} Downloads erreichbar`);
+  await help.screenshot({ path: `${SHOTS}/09c-boards-page.png`, fullPage: true });
+  await help.close();
   await ctx.close();
 
   /* ---------------- 3. Sechs Teams auf Laptop-Bildschirm ---------------- */

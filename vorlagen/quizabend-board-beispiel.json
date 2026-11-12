@@ -1,0 +1,159 @@
+{
+  "boards": [
+    {
+      "name": "Beispiel: Allgemeinwissen",
+      "kategorien": [
+        {
+          "name": "Geografie",
+          "fragen": [
+            {
+              "punkte": 100,
+              "frage": "Welches ist das flächenmäßig größte Land der Erde?",
+              "antwort": "Russland"
+            },
+            {
+              "punkte": 200,
+              "frage": "Welcher ist der größte Ozean der Erde?",
+              "antwort": "Der Pazifik (Pazifischer Ozean)"
+            },
+            {
+              "punkte": 300,
+              "frage": "Wie heißt die Hauptstadt von Australien?",
+              "antwort": "Canberra"
+            },
+            {
+              "punkte": 400,
+              "frage": "In welchem Land liegt die antike Felsenstadt Petra?",
+              "antwort": "Jordanien"
+            },
+            {
+              "punkte": 500,
+              "frage": "Welches ist der flächenmäßig größte Staat der Welt ohne Zugang zum Meer?",
+              "antwort": "Kasachstan"
+            }
+          ]
+        },
+        {
+          "name": "Geschichte",
+          "fragen": [
+            {
+              "punkte": 100,
+              "frage": "Welches Passagierschiff sank 1912 nach der Kollision mit einem Eisberg?",
+              "antwort": "Die Titanic"
+            },
+            {
+              "punkte": 200,
+              "frage": "In welchem Jahr fiel die Berliner Mauer?",
+              "antwort": "1989 (am 9. November)"
+            },
+            {
+              "punkte": 300,
+              "frage": "Wer war der erste Bundeskanzler der Bundesrepublik Deutschland?",
+              "antwort": "Konrad Adenauer"
+            },
+            {
+              "punkte": 400,
+              "frage": "In welcher Stadt wurde 1914 der österreichische Thronfolger Franz Ferdinand erschossen?",
+              "antwort": "Sarajevo"
+            },
+            {
+              "punkte": 500,
+              "frage": "Wie heißt die Schlacht im Jahr 9 n. Chr., in der Germanen unter Arminius drei römische Legionen vernichteten?",
+              "antwort": "Varusschlacht (Schlacht im Teutoburger Wald)"
+            }
+          ]
+        },
+        {
+          "name": "Naturwissenschaft",
+          "fragen": [
+            {
+              "punkte": 100,
+              "frage": "Wie lautet die chemische Formel von Wasser?",
+              "antwort": "H₂O"
+            },
+            {
+              "punkte": 200,
+              "frage": "Welches Gas nehmen Pflanzen für die Photosynthese aus der Luft auf?",
+              "antwort": "Kohlendioxid (CO₂)"
+            },
+            {
+              "punkte": 300,
+              "frage": "Welches Metall ist bei Raumtemperatur flüssig?",
+              "antwort": "Quecksilber"
+            },
+            {
+              "punkte": 400,
+              "frage": "Welches Gas macht den größten Teil unserer Luft aus?",
+              "antwort": "Stickstoff (rund 78 Prozent)"
+            },
+            {
+              "punkte": 500,
+              "frage": "Nach welchem deutschen Physiker ist die Einheit der Frequenz benannt?",
+              "antwort": "Heinrich Hertz"
+            }
+          ]
+        },
+        {
+          "name": "Weltraum",
+          "fragen": [
+            {
+              "punkte": 100,
+              "frage": "Welcher Planet wird „der Rote Planet“ genannt?",
+              "antwort": "Der Mars"
+            },
+            {
+              "punkte": 200,
+              "frage": "Wer betrat 1969 als erster Mensch den Mond?",
+              "antwort": "Neil Armstrong"
+            },
+            {
+              "punkte": 300,
+              "frage": "Welcher ist der größte Planet unseres Sonnensystems?",
+              "antwort": "Jupiter"
+            },
+            {
+              "punkte": 400,
+              "frage": "Wie lange braucht das Licht ungefähr von der Sonne zur Erde?",
+              "antwort": "Etwa 8 Minuten (rund 8 Minuten und 20 Sekunden)"
+            },
+            {
+              "punkte": 500,
+              "frage": "Wie heißt die große Spiralgalaxie, die unserer Milchstraße am nächsten liegt?",
+              "antwort": "Andromedagalaxie"
+            }
+          ]
+        },
+        {
+          "name": "Sport",
+          "fragen": [
+            {
+              "punkte": 100,
+              "frage": "Wie viele Spieler einer Fußballmannschaft stehen gleichzeitig auf dem Platz?",
+              "antwort": "Elf"
+            },
+            {
+              "punkte": 200,
+              "frage": "In welcher Sportart gibt es das „Hole-in-One“?",
+              "antwort": "Golf"
+            },
+            {
+              "punkte": 300,
+              "frage": "Wie viele Punkte bringt ein Touchdown im American Football?",
+              "antwort": "Sechs"
+            },
+            {
+              "punkte": 400,
+              "frage": "Wie lang ist ein Marathon?",
+              "antwort": "42,195 Kilometer"
+            },
+            {
+              "punkte": 500,
+              "frage": "Welches Land gewann 1930 die erste Fußball-Weltmeisterschaft?",
+              "antwort": "Uruguay"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

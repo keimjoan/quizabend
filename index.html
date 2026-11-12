@@ -52,6 +52,7 @@ p { margin: 0; }
 .spacer { flex: 1 1 auto; }
 .hint { color: var(--ink-dim); font-size: 15px; }
 .row-btns { display: flex; flex-wrap: wrap; gap: 8px; }
+a { color: var(--brass); text-underline-offset: 3px; }
 
 /* ---------- Klappziffern ---------- */
 .flaps { display: inline-flex; gap: .06em; vertical-align: middle; }
@@ -78,7 +79,7 @@ p { margin: 0; }
 
 /* ---------- Knöpfe ---------- */
 .btn {
-  display: inline-flex; align-items: center; justify-content: center; gap: .5em;
+  display: inline-flex; align-items: center; text-decoration: none; justify-content: center; gap: .5em;
   min-height: 48px; padding: 0 22px; border: 0; border-radius: 12px;
   font-weight: 700; font-size: 18px; line-height: 1.1; text-align: center;
   transition: transform .08s ease, filter .12s ease, background-color .12s ease;
@@ -178,6 +179,11 @@ textarea.text-in { padding: 10px 14px; min-height: 64px; resize: vertical; line-
 .banner.warn { background: rgba(255,122,107,.1); box-shadow: inset 0 0 0 1px rgba(255,122,107,.5); }
 #join-slot { display: grid; gap: 12px; }
 #join-slot:empty { display: none; }
+.oblist { display: grid; gap: 8px; }
+.obrow { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 2px 12px; }
+.obrow .chip { justify-self: start; max-width: 100%; text-align: left; }
+.obrow .obcats { grid-column: 1 / -1; grid-row: 2; font-size: 14px; overflow-wrap: anywhere; }
+.obrow .icon-btn { grid-column: 2; grid-row: 1; }
 .kibox { justify-self: stretch; display: grid; gap: 10px; justify-items: start; padding: 14px 16px; border-radius: 12px; background: rgba(0,0,0,.2); box-shadow: inset 0 0 0 1px var(--line); }
 .kibox .text-in { width: 100%; }
 .kibox code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
@@ -364,6 +370,10 @@ button.team.can-buzz .tstate { color: var(--brass); font-weight: 700; }
 .modal-back { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: 16px; background: rgba(3, 12, 10, .74); }
 .modal { width: min(560px, 100%); max-height: calc(100vh - 32px); overflow: auto; display: grid; gap: 16px; padding: 22px; border-radius: 18px; background: #10322b; box-shadow: inset 0 0 0 1px var(--line), 0 30px 80px rgba(0,0,0,.5); }
 .modal.wide { width: min(780px, 100%); }
+.modal-back { grid-template-columns: minmax(0, 1fr); }
+.modal { grid-template-columns: minmax(0, 1fr); }
+.modal .field { grid-template-columns: minmax(0, 1fr); }
+.modal input[type="file"] { width: 100%; min-width: 0; font-size: 15px; }
 .modal h2 { font-family: var(--font-display); font-weight: 900; font-size: 34px; line-height: 1; }
 .modal .actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; }
 .menu-list { display: grid; gap: 8px; }
@@ -604,7 +614,7 @@ const OCOLORS = ['#ff6352', '#56b6ff', '#ffd447', '#b994ff', '#ff9f43', '#ff79bd
 const KEYS = ['a', 'l', 'q', 'p', 'g', 'b'];
 const VALUES = [100, 200, 300, 400, 500];
 const MAX_TEAMS = 6, O_MAX = 12, BUZZ_MS = 20000, VOTE_MS = 30000, JUDGE_MS = 30000, KI_MS = 25000;
-const K = { prefs: 'quizabend.prefs.v1', custom: 'quizabend.custom.v1', game: 'quizabend.game.v1', played: 'quizabend.played.v1', me: 'quizabend.me.v1', online: 'quizabend.online.v1', room: 'quizabend.room.v1', ki: 'quizabend.ki.v1' };
+const K = { prefs: 'quizabend.prefs.v1', custom: 'quizabend.custom.v1', game: 'quizabend.game.v1', played: 'quizabend.played.v1', me: 'quizabend.me.v1', online: 'quizabend.online.v1', room: 'quizabend.room.v1', ki: 'quizabend.ki.v1', boards: 'quizabend.boards.v1' };
 
 const $ = (s, r = document) => r.querySelector(s);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -716,7 +726,7 @@ function loadPrefs() {
       color: Number.isInteger(t && t.color) ? clamp(t.color, 0, COLORS.length - 1) : i % COLORS.length,
       key: (t && typeof t.key === 'string' && t.key.length === 1) ? t.key : KEYS[i]
     })),
-    boards: Number.isInteger(p.boards) ? clamp(p.boards, 1, 10) : d.boards,
+    boards: Number.isInteger(p.boards) ? clamp(p.boards, 1, 40) : d.boards,
     timer: [0, 15, 30, 60].includes(p.timer) ? p.timer : 0,
     penalty: p.penalty !== false,
     sound: p.sound !== false,
@@ -873,11 +883,10 @@ function soundFor(a) {
 function afterChange() { store.set(K.game, game); render(); broadcastState(); updatePresence(); }
 
 function startGame() {
-  const sel = selectedCats(), maxB = Math.floor(sel.length / 5);
-  if (maxB < 1) return;
-  const nB = clamp(prefs.boards, 1, maxB);
+  const boards = gameBoards(prefs.boards);
+  if (!boards) return;
+  const nB = boards.length;
   const labels = prefs.teams.map(teamLabel);
-  const chosen = pickCats(sel, nB * 5);
   game = {
     id: rid(12),
     settings: { timer: prefs.timer, penalty: prefs.penalty },
@@ -885,7 +894,7 @@ function startGame() {
       const dup = labels.slice(0, i).filter(l => l === labels[i]).length;
       return { name: dup ? `${labels[i]} ${dup + 1}` : labels[i], color: COLORS[t.color].hex, key: t.key };
     }),
-    boards: makeBoards(chosen, nB),
+    boards,
     dyn: { ver: 1, phase: 'board', bi: 0, turn: 0, scores: prefs.teams.map(() => 0), res: emptyRes(nB), cur: null },
     hist: []
   };
@@ -957,6 +966,7 @@ function setupHTML() {
       <h1 class="sr">Quizabend</h1>
       ${flaps('QUIZABEND', 'title-flaps')}
       <p>Ein Punkte-Quiz für Teams oder jeden für sich. Jedes Board hat fünf Kategorien mit je fünf Fragen von 100 bis 500 Punkten.</p>
+      <p><a href="boards.html" id="link-boards">Eigene Boards erstellen</a>: Vorlagen für Excel und Google Sheets, ein Claude-Skill und die Anleitung.</p>
     </header>
     <div id="join-slot">${joinHTML()}</div>
     <div class="modetabs" role="tablist" aria-label="Spielart">
@@ -971,16 +981,15 @@ function catsPanelHTML() {
   return `<div class="panel-head"><h2 id="h-cats">Kategorien</h2><span class="hint">${sel.length} von ${all.length} ausgewählt</span></div>
     <div class="chips">${all.map(c => `<button class="chip" id="cat-${esc(c.id)}" data-act="cat-toggle" data-id="${esc(c.id)}" aria-pressed="${!off.has(c.id)}">${esc(c.name)}${c.own ? '<small>eigene</small>' : ''}</button>`).join('')}</div>
     <div class="row-btns">
-      <button class="btn btn-plain btn-sm" id="cat-all" data-act="cat-all">Alle auswählen</button>
-      <button class="btn btn-plain btn-sm" id="cat-none" data-act="cat-none">Keine</button>
+      <button class="btn btn-plain btn-sm" id="cats-all" data-act="cat-all">Alle auswählen</button>
+      <button class="btn btn-plain btn-sm" id="cats-none" data-act="cat-none">Keine</button>
       ${ui.mode === 'setup' ? '<button class="btn btn-plain btn-sm" id="open-editor" data-act="open-editor">Eigene Fragen schreiben</button>' : ''}
     </div>
     <p class="hint">Für jedes Board werden fünf Kategorien zufällig gezogen. Schon gespielte kommen erst wieder dran, wenn alle anderen durch sind.</p>`;
 }
 function localSetupHTML() {
-  const sel = selectedCats();
-  const maxB = Math.floor(sel.length / 5);
-  const boards = clamp(prefs.boards, 1, Math.max(1, maxB));
+  const br = boardRange(), maxB = br.ok ? br.max : 0;
+  const boards = clamp(prefs.boards, br.min, br.max);
   const n = prefs.teams.length;
   return `${resumeHTML()}
     <div class="cols">
@@ -1010,6 +1019,7 @@ function localSetupHTML() {
         </section>
       </div>
       <div class="col">
+        <section class="panel" aria-labelledby="h-own">${boardsPanelHTML()}</section>
         <section class="panel" aria-labelledby="h-cats">${catsPanelHTML()}</section>
         <section class="panel" aria-labelledby="h-opts">
           <h2 id="h-opts">Optionen</h2>
@@ -1036,11 +1046,11 @@ function localSetupHTML() {
       <div class="boards-pick">
         <span class="opt-label" id="lbl-boards">Boards</span>
         <div class="stepper" role="group" aria-labelledby="lbl-boards">
-          <button class="icon-btn" id="b-minus" data-act="boards" data-d="-1" ${boards <= 1 ? 'disabled' : ''} aria-label="Ein Board weniger">${icon('minus')}</button>
+          <button class="icon-btn" id="b-minus" data-act="boards" data-d="-1" ${boards <= br.min ? 'disabled' : ''} aria-label="Ein Board weniger">${icon('minus')}</button>
           <span class="stepper-val">${flaps(boards)}<span class="sr" aria-live="polite">${boards} ${boards === 1 ? 'Board' : 'Boards'}</span></span>
           <button class="icon-btn" id="b-plus" data-act="boards" data-d="1" ${boards >= maxB ? 'disabled' : ''} aria-label="Ein Board mehr">${icon('plus')}</button>
         </div>
-        <span class="hint">${maxB >= 1 ? `${boards * 25} Fragen. Mit dieser Auswahl gehen bis zu ${maxB} ${maxB === 1 ? 'Board' : 'Boards'}.` : '<span class="err">Wähle mindestens fünf Kategorien aus.</span>'}</span>
+        <span class="hint">${boardsHint(boards, br)}${br.ok ? ` Mit dieser Auswahl gehen bis zu ${maxB} ${maxB === 1 ? 'Board' : 'Boards'}.` : ''}</span>
       </div>
       <button class="btn btn-brass btn-lg" id="start" data-act="start" ${maxB >= 1 ? '' : 'disabled'}>Spiel starten</button>
     </div>`;
@@ -1314,19 +1324,236 @@ function parseImport(text) {
   try { data = JSON.parse(text); } catch (e) { throw new Error('Das ist kein gültiges JSON. Prüfe Klammern und Anführungszeichen.'); }
   if (!Array.isArray(data)) data = (data && (data.kategorien || data.categories)) || [data];
   if (!Array.isArray(data) || !data.length) throw new Error('Keine Kategorien gefunden.');
-  return data.map((c, k) => {
-    const name = String((c && (c.name || c.kategorie || c.title)) || '').trim();
-    let qs = c && (c.fragen || c.questions || c.qs);
-    if (!name || !Array.isArray(qs) || qs.length < 5) throw new Error(`Kategorie ${k + 1}${name ? ` („${name}“)` : ''} braucht einen Namen und fünf Fragen.`);
-    qs = qs.map(x => Array.isArray(x)
-      ? { q: String(x[0] || ''), a: String(x[1] || ''), p: NaN }
-      : { q: String((x && (x.frage || x.question || x.q)) || ''), a: String((x && (x.antwort || x.answer || x.a)) || ''), p: Number(x && (x.punkte || x.points)) });
-    if (qs.every(x => Number.isFinite(x.p))) qs.sort((a, b) => a.p - b.p);
-    return { id: 'u_' + rid(8), name: name.slice(0, 60), qs: qs.slice(0, 5).map(x => ({ q: x.q.trim().slice(0, 400), a: x.a.trim().slice(0, 200) })) };
-  });
+  return data.map((c, k) => Object.assign({ id: 'u_' + rid(8) }, catFromJSON(c, `Kategorie ${k + 1}`)));
 }
 function exportJSON() {
   return JSON.stringify({ kategorien: custom.map(c => ({ name: c.name, fragen: c.qs.map((x, r) => ({ punkte: VALUES[r], frage: x.q, antwort: x.a })) })) }, null, 2);
+}
+
+/* ---------- Eigene Boards ----------
+   Ein eigenes Board ist ein fester Satz aus 5 Kategorien. Ausgewählte eigene Boards werden zuerst gespielt,
+   in ihrer Reihenfolge, danach kommen zufällig gezogene Boards. Import aus der Excel-Vorlage (.xlsx), aus CSV,
+   aus eingefügten Tabellenzellen (Excel, Google Sheets) oder als JSON (zum Beispiel vom Claude-Skill).
+   Vorlagen und Anleitung: boards.html, erzeugt mit tools/vorlagen.js. */
+const OWN_MAX = 30;
+let ownBoards = [];
+let bimpName = '';
+function loadBoards() {
+  const list = store.get(K.boards);
+  if (!Array.isArray(list)) return;
+  ownBoards = list.filter(b => b && typeof b.id === 'string' && Array.isArray(b.cats) && b.cats.length === 5).slice(0, OWN_MAX).map(b => ({
+    id: b.id, name: String(b.name || 'Eigenes Board').slice(0, 40), on: b.on !== false,
+    cats: b.cats.map(c => ({ name: String((c && c.name) || '').slice(0, 60), qs: VALUES.map((_, r) => ({ q: String((c && c.qs && c.qs[r] && c.qs[r].q) || ''), a: String((c && c.qs && c.qs[r] && c.qs[r].a) || '') })) }))
+  }));
+}
+const saveBoards = () => store.set(K.boards, ownBoards);
+const selBoards = () => ownBoards.filter(b => b.on);
+/* Wie viele Boards gehen: mindestens so viele wie eigene ausgewählt sind, höchstens dazu alle aus den Kategorien */
+function boardRange() {
+  const own = selBoards().length, max = own + Math.floor(selectedCats().length / 5);
+  return { own, ok: max >= 1, min: Math.max(1, own), max: Math.max(1, own, max) };
+}
+function gameBoards(want) {
+  const own = selBoards(), r = boardRange();
+  if (!r.ok) return null;
+  const nB = clamp(want, r.min, r.max), nR = nB - own.length;
+  return own.map(b => ({ cats: b.cats.map(c => ({ name: c.name, qs: c.qs.map(x => ({ q: x.q, a: x.a })) })) }))
+    .concat(nR > 0 ? makeBoards(pickCats(selectedCats(), nR * 5), nR) : []);
+}
+function boardsHint(boards, r) {
+  if (!r.ok) return '<span class="err">Wähle mindestens fünf Kategorien oder ein eigenes Board aus.</span>';
+  const own = r.own ? ` ${r.own === 1 ? 'Dein eigenes Board kommt' : `Deine ${r.own} eigenen Boards kommen`} zuerst.` : '';
+  return `${boards * 25} Fragen.${own}`;
+}
+function boardsPanelHTML() {
+  const sel = selBoards().length;
+  return `<div class="panel-head"><h2 id="h-own">Eigene Boards</h2>${ownBoards.length ? `<span class="hint">${sel} von ${ownBoards.length} ausgewählt</span>` : ''}</div>
+    ${ownBoards.length ? `<div class="oblist">${ownBoards.map(b => `<div class="obrow">
+      <button class="chip" id="ownb-${esc(b.id)}" data-act="ownb-toggle" data-id="${esc(b.id)}" aria-pressed="${b.on}">${esc(b.name)}</button>
+      <span class="hint obcats">${esc(b.cats.map(c => c.name).join(', '))}</span>
+      <button class="icon-btn" id="ownb-del-${esc(b.id)}" data-act="ownb-del" data-id="${esc(b.id)}" aria-label="Board ${esc(b.name)} löschen" title="Board löschen">${icon('x')}</button>
+    </div>`).join('')}</div>` : '<p class="hint">Noch kein eigenes Board. Fülle die Vorlage für Excel oder Google Sheets aus oder lass dir eins von Claude schreiben und importiere es hier.</p>'}
+    <div class="row-btns">
+      <button class="btn btn-plain btn-sm" id="ownb-import" data-act="ownb-import">${icon('plus')} Board importieren</button>
+      <a class="btn btn-plain btn-sm" id="ownb-help" href="boards.html" target="_blank" rel="noopener">Vorlagen und Anleitung</a>
+    </div>
+    ${ownBoards.length ? '<p class="hint">Ausgewählte eigene Boards werden zuerst gespielt, in dieser Reihenfolge. Weitere Boards werden aus den Kategorien gezogen.</p>' : ''}`;
+}
+function openBoardImport() {
+  bimpName = '';
+  openModal(`<h2 id="mt">Board importieren</h2>
+    <p class="hint">Wähle eine ausgefüllte Vorlage (Excel, CSV oder die JSON-Datei vom Claude-Skill). Oder markiere in Excel oder Google Sheets die Zellen samt Kopfzeile, kopiere sie und füge sie unten ein. <a href="boards.html" target="_blank" rel="noopener">Vorlagen und Anleitung</a></p>
+    <div class="field"><label for="bimp-file">Datei wählen</label><input id="bimp-file" type="file" accept=".xlsx,.csv,.tsv,.txt,.json,application/json,text/csv,text/plain,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"></div>
+    <div class="field"><label for="bimp-text">Oder hier einfügen</label><textarea class="text-in code" id="bimp-text" rows="8" spellcheck="false" placeholder="Board, Kategorie, Punkte, Frage, Antwort"></textarea></div>
+    <p class="err" id="bimp-err" role="alert"></p>
+    <div class="actions"><button class="btn btn-plain" data-act="modal-close">Abbrechen</button><button class="btn btn-brass" id="bimp-run" data-act="bimp-run">Importieren</button></div>`, 'wide');
+}
+
+/* Eine Kategorie aus JSON: Name und fünf Fragen, nach Punkten sortiert (auch für „Eigene Fragen“) */
+function catFromJSON(c, label) {
+  const name = String((c && (c.name || c.kategorie || c.title)) || '').trim();
+  let qs = c && (c.fragen || c.questions || c.qs);
+  if (!name || !Array.isArray(qs) || qs.length < 5) throw new Error(`${label}${name ? ` („${name}“)` : ''} braucht einen Namen und fünf Fragen.`);
+  qs = qs.map(x => Array.isArray(x)
+    ? { q: String(x[0] || ''), a: String(x[1] || ''), p: NaN }
+    : { q: String((x && (x.frage || x.question || x.q)) || ''), a: String((x && (x.antwort || x.answer || x.a)) || ''), p: Number(x && (x.punkte || x.points)) });
+  if (qs.every(x => Number.isFinite(x.p))) qs.sort((a, b) => a.p - b.p);
+  return { name: name.slice(0, 60), qs: qs.slice(0, 5).map(x => ({ q: x.q.trim().slice(0, 400), a: x.a.trim().slice(0, 200) })) };
+}
+function parseBoards(text, fallback) {
+  const t = String(text || '').replace(/^﻿/, '').trim();
+  const base = (fallback || '').trim() || 'Eigenes Board';
+  if (!t) throw new Error('Wähle eine Datei oder füge ein Board ein.');
+  let boards;
+  if (t[0] === '{' || t[0] === '[') {
+    let data;
+    try { data = JSON.parse(t); } catch (e) { throw new Error('Das ist kein gültiges JSON. Prüfe Klammern und Anführungszeichen.'); }
+    let list = Array.isArray(data) ? data : data && (data.boards || data.board);
+    if (list && !Array.isArray(list)) list = [list];
+    if (!list && data && (data.kategorien || data.categories)) list = [data];
+    if (!Array.isArray(list) || !list.length) throw new Error('Keine Boards gefunden. Erwartet wird {"boards": [{"name": …, "kategorien": […]}]}.');
+    if (list.every(x => x && (x.fragen || x.questions))) list = [{ kategorien: list }];
+    boards = list.map((b, k) => {
+      const name = String((b && (b.name || b.titel || b.title)) || '').trim() || (list.length > 1 ? `${base} ${k + 1}` : base);
+      const cats = b && (b.kategorien || b.categories || b.cats);
+      if (!Array.isArray(cats)) throw new Error(`Board „${name}“ hat keine Kategorien.`);
+      return { name, cats: cats.map((c, ci) => catFromJSON(c, `Board „${name}“, Kategorie ${ci + 1}`)) };
+    });
+  } else boards = boardsFromTable(parseTable(t), base);
+  if (boards.length > OWN_MAX) throw new Error(`Höchstens ${OWN_MAX} Boards auf einmal.`);
+  for (const b of boards) {
+    if (b.cats.length !== 5) throw new Error(`Board „${b.name}“ hat ${b.cats.length} ${b.cats.length === 1 ? 'Kategorie' : 'Kategorien'}. Ein Board braucht genau fünf.`);
+    b.cats.forEach(c => c.qs.forEach((x, r) => {
+      const where = `Board „${b.name}“, Kategorie „${c.name}“, ${VALUES[r]} Punkte`;
+      if (!x.q) throw new Error(`${where}: Die Frage fehlt.`);
+      if (!x.a) throw new Error(`${where}: Die Antwort fehlt.`);
+    }));
+  }
+  return boards.map(b => ({ id: 'b_' + rid(8), name: b.name.slice(0, 40), on: true, cats: b.cats }));
+}
+/* Tabelle aus CSV, Semikolon-CSV oder eingefügten Zellen (Tabulatoren), mit Anführungszeichen wie in Excel */
+function parseTable(t) {
+  const first = t.split(/\r?\n/)[0];
+  const d = t.includes('\t') ? '\t' : first.split(';').length >= first.split(',').length ? ';' : ',';
+  const rows = []; let row = [], cell = '', q = false;
+  for (let i = 0; i < t.length; i++) {
+    const ch = t[i];
+    if (q) { if (ch === '"') { if (t[i + 1] === '"') { cell += '"'; i++; } else q = false; } else cell += ch; }
+    else if (ch === '"' && !cell.trim()) { q = true; cell = ''; }
+    else if (ch === d) { row.push(cell); cell = ''; }
+    else if (ch === '\n' || ch === '\r') { if (ch === '\r' && t[i + 1] === '\n') i++; row.push(cell); rows.push(row); row = []; cell = ''; }
+    else cell += ch;
+  }
+  row.push(cell); rows.push(row);
+  return rows.map(r => r.map(c => c.trim()));
+}
+/* Spalten Board (optional), Kategorie, Punkte, Frage, Antwort. Board und Kategorie gelten nach unten weiter. */
+function boardsFromTable(rows, base) {
+  const key = s => String(s).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z]/g, '');
+  const hi = rows.findIndex(r => { const k = r.map(key); return k.some(x => x.startsWith('kategorie') || x === 'category') && k.some(x => x.startsWith('frage') || x === 'question'); });
+  if (hi < 0) throw new Error('Keine Kopfzeile gefunden. Die Tabelle braucht die Spalten Kategorie, Punkte, Frage und Antwort, so wie in der Vorlage.');
+  const h = rows[hi].map(key), at = (...n) => h.findIndex(x => n.some(y => x.startsWith(y)));
+  const cB = at('board'), cK = at('kategorie', 'category'), cP = at('punkte', 'punkt', 'wert', 'points'), cF = at('frage', 'question'), cA = at('antwort', 'losung', 'answer');
+  if (cA < 0) throw new Error('Die Spalte Antwort fehlt.');
+  const boards = [];
+  let curB = base, curK = '';
+  for (const r of rows.slice(hi + 1)) {
+    const g = i => i >= 0 ? String(r[i] || '').trim() : '';
+    if (![cB, cK, cP, cF, cA].some(i => g(i))) continue;
+    if (g(cB) && g(cB) !== curB) { curB = g(cB); curK = ''; }
+    if (g(cK)) curK = g(cK);
+    if (!curK) throw new Error(`Board „${curB}“: Eine Zeile hat keine Kategorie. Schreib den Namen der Kategorie in die erste Zeile jeder Kategorie.`);
+    let b = boards.find(x => x.name === curB);
+    if (!b) boards.push(b = { name: curB, cats: [] });
+    let c = b.cats.find(x => x.name === curK);
+    if (!c) b.cats.push(c = { name: curK, qs: [] });
+    c.qs.push({ p: Number(g(cP).replace(/[^\d-]/g, '') || NaN), q: g(cF).slice(0, 400), a: g(cA).slice(0, 200) });
+  }
+  if (!boards.length) throw new Error('Keine Fragen gefunden. Unter der Kopfzeile steht eine Zeile pro Frage.');
+  for (const b of boards) for (const c of b.cats) {
+    if (c.qs.length !== 5) throw new Error(`Board „${b.name}“, Kategorie „${c.name}“ hat ${c.qs.length} ${c.qs.length === 1 ? 'Frage' : 'Fragen'}. Gebraucht werden genau fünf.`);
+    if (c.qs.every(x => Number.isFinite(x.p))) c.qs.sort((x, y) => x.p - y.p);
+    c.name = c.name.slice(0, 60);
+    c.qs = c.qs.map(x => ({ q: x.q, a: x.a }));
+  }
+  return boards;
+}
+/* Excel-Datei (.xlsx) lesen, ohne Bibliothek: ZIP-Verzeichnis, Deflate über DecompressionStream, XML über DOMParser.
+   Liefert die Zeilen jedes Blatts, das Blatt „Board“ zuerst. */
+async function xlsxSheets(buf) {
+  const u8 = new Uint8Array(buf), dv = new DataView(buf), bad = 'Die Datei ist keine gültige Excel-Datei (.xlsx).';
+  let e = -1;
+  for (let i = u8.length - 22; i >= Math.max(0, u8.length - 70000); i--) if (dv.getUint32(i, true) === 0x06054b50) { e = i; break; }
+  if (e < 0) throw new Error(bad);
+  const files = {}, dec = new TextDecoder();
+  let p = dv.getUint32(e + 16, true);
+  for (let k = dv.getUint16(e + 10, true); k > 0; k--) {
+    if (p + 46 > u8.length || dv.getUint32(p, true) !== 0x02014b50) throw new Error(bad);
+    const nl = dv.getUint16(p + 28, true);
+    files[dec.decode(u8.subarray(p + 46, p + 46 + nl))] = { m: dv.getUint16(p + 10, true), size: dv.getUint32(p + 20, true), off: dv.getUint32(p + 42, true) };
+    p += 46 + nl + dv.getUint16(p + 30, true) + dv.getUint16(p + 32, true);
+  }
+  const read = async name => {
+    const f = files[name]; if (!f) return '';
+    const start = f.off + 30 + dv.getUint16(f.off + 26, true) + dv.getUint16(f.off + 28, true), data = u8.subarray(start, start + f.size);
+    if (f.m === 0) return dec.decode(data);
+    if (f.m !== 8 || typeof DecompressionStream !== 'function') throw new Error('Dieser Browser kann die Excel-Datei nicht lesen. Kopiere die Zellen in Excel und füge sie hier ein.');
+    return new Response(new Blob([data]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).text();
+  };
+  const xml = s => new DOMParser().parseFromString(s || '<x/>', 'application/xml');
+  const tags = (d, n) => Array.from(d.getElementsByTagNameNS('*', n));
+  const ss = tags(xml(await read('xl/sharedStrings.xml')), 'si').map(si => tags(si, 't').filter(t => t.parentNode.localName !== 'rPh').map(t => t.textContent).join(''));
+  const target = {};
+  tags(xml(await read('xl/_rels/workbook.xml.rels')), 'Relationship').forEach(r => { target[r.getAttribute('Id')] = r.getAttribute('Target') || ''; });
+  const sheets = tags(xml(await read('xl/workbook.xml')), 'sheet').map(s => {
+    const t = target[s.getAttributeNS('http://schemas.openxmlformats.org/officeDocument/2006/relationships', 'id') || s.getAttribute('r:id')] || '';
+    return { name: s.getAttribute('name') || '', path: t.startsWith('/') ? t.slice(1) : 'xl/' + t.replace(/^\.\//, '') };
+  });
+  if (!sheets.length) throw new Error(bad);
+  sheets.sort((a, b) => /^boards?$/i.test(b.name) - /^boards?$/i.test(a.name));
+  const out = [];
+  for (const s of sheets) {
+    const rows = [];
+    tags(xml(await read(s.path)), 'row').forEach(rw => {
+      const row = [];
+      tags(rw, 'c').forEach((c, k) => {
+        const m = /^([A-Z]+)/.exec(c.getAttribute('r') || '');
+        const ci = m ? [...m[1]].reduce((n, ch) => n * 26 + ch.charCodeAt(0) - 64, 0) - 1 : k;
+        const ty = c.getAttribute('t'), v = tags(c, 'v')[0];
+        row[ci] = ty === 's' ? (ss[Number(v && v.textContent)] || '') : ty === 'inlineStr' ? tags(c, 't').map(x => x.textContent).join('') : v ? v.textContent : '';
+      });
+      rows[(Number(rw.getAttribute('r')) || rows.length + 1) - 1] = Array.from(row, x => x || '');
+    });
+    out.push(Array.from(rows, r => r || []));
+  }
+  return out;
+}
+const toTSV = rows => rows.map(r => r.map(c => /[\t\n\r"]/.test(c) ? `"${c.replace(/"/g, '""')}"` : c).join('\t')).join('\n').replace(/\s+$/, '');
+async function readBoardFile(file) {
+  const ta = $('#bimp-text'), err = $('#bimp-err');
+  bimpName = file.name.replace(/\.[^.]+$/, '').replace(/[-_]+/g, ' ').trim().slice(0, 40);
+  try {
+    if (/\.xls$/i.test(file.name)) throw new Error('Das alte Excel-Format (.xls) geht nicht. Speichere die Datei in Excel als .xlsx.');
+    const buf = await file.arrayBuffer(), head = new Uint8Array(buf.slice(0, 2));
+    let text;
+    if (head[0] === 0x50 && head[1] === 0x4b) {
+      const sheets = await xlsxSheets(buf);
+      text = toTSV(sheets.find(rows => rows.some(r => r.some(c => /kategorie|category/i.test(c)) && r.some(c => /frage|question/i.test(c)))) || sheets[0]);
+    } else text = new TextDecoder().decode(buf);
+    if (ta) ta.value = text;
+    if (err) err.textContent = '';
+  } catch (ex) { if (err) err.textContent = ex.message || 'Die Datei ließ sich nicht lesen.'; }
+}
+function importBoards() {
+  const ta = $('#bimp-text'), err = $('#bimp-err');
+  try {
+    const list = parseBoards(ta.value, bimpName);
+    if (ownBoards.length + list.length > OWN_MAX) throw new Error(`Es passen höchstens ${OWN_MAX} eigene Boards. Lösche vorher alte.`);
+    ownBoards.push(...list); saveBoards();
+    closeModal();
+    toast(list.length === 1 ? `Board „${list[0].name}“ importiert` : `${list.length} Boards importiert`);
+    return true;
+  } catch (ex) { err.textContent = ex.message; return false; }
 }
 
 /* ---------- Dialoge & Hinweise ---------- */
@@ -1536,7 +1763,7 @@ function oView(local) {
   const sel = selectedCats();
   const v = {
     id: g.id, ver: g.v, ph: g.ph, host: g.host, qn: g.qn,
-    set: { mode: g.set.mode, nt: g.set.nt, tn: g.set.tn.slice(0, g.set.nt), boards: g.set.boards, timer: g.set.timer, pen: g.set.pen, ki: g.set.ki ? 1 : 0, mod: g.set.mod ? 1 : 0, km: g.set.km === 'haiku' ? 'haiku' : 'opus', nc: sel.length },
+    set: { mode: g.set.mode, nt: g.set.nt, tn: g.set.tn.slice(0, g.set.nt), boards: g.set.boards, timer: g.set.timer, pen: g.set.pen, ki: g.set.ki ? 1 : 0, mod: g.set.mod ? 1 : 0, km: g.set.km === 'haiku' ? 'haiku' : 'opus', nc: sel.length, no: selBoards().length },
     pl: g.pl.map(p => [p.id, p.n, g.ph === 'lobby' ? p.slot : p.t, p.on ? 1 : 0])
   };
   if (g.ph !== 'lobby' && g.boards.length) {
@@ -1735,7 +1962,7 @@ function oSet(k, val) {
   const s = g.set;
   if (k === 'mode') s.mode = val === 'teams' ? 'teams' : 'solo';
   else if (k === 'nt') s.nt = clamp(s.nt + val, 2, 6);
-  else if (k === 'boards') { const maxB = Math.max(1, Math.floor(selectedCats().length / 5)); s.boards = clamp(clamp(s.boards, 1, maxB) + val, 1, maxB); prefs.boards = s.boards; }
+  else if (k === 'boards') { const r = boardRange(); s.boards = clamp(clamp(s.boards, r.min, r.max) + val, r.min, r.max); prefs.boards = s.boards; }
   else if (k === 'timer') s.timer = [30, 60, 90].includes(val) ? val : 60;
   else if (k === 'pen') s.pen = !!val;
   else if (k === 'wert') { s.ki = val === 'ki'; s.mod = val === 'mod'; }
@@ -1746,8 +1973,7 @@ function oSet(k, val) {
 }
 function oStartGame() {
   const g = on.og; if (!g) return;
-  const sel = selectedCats(), maxB = Math.floor(sel.length / 5);
-  if (maxB < 1) { toast('Wähle mindestens fünf Kategorien aus.'); return; }
+  if (!boardRange().ok) { toast('Wähle mindestens fünf Kategorien oder ein eigenes Board aus.'); return; }
   if (g.pl.length < 2) { toast('Es braucht mindestens zwei Spieler.'); return; }
   if (g.set.ki && !kiKey) { toast('Trage zuerst deinen API-Schlüssel ein oder wähle „Selbst bewerten und abstimmen“.'); return; }
   const plays = p => !(g.set.mod && p.id === g.host);
@@ -1769,9 +1995,8 @@ function oStartGame() {
     teams = used.map(i => ({ n: oTeamName(i), c: COLORS[i].hex }));
     g.pl.forEach(p => { p.t = plays(p) ? used.indexOf(p.slot) : null; });
   }
-  const nB = clamp(g.set.boards, 1, maxB);
-  const chosen = pickCats(sel, nB * 5);
-  Object.assign(g, { teams, sc: teams.map(() => 0), boards: makeBoards(chosen, nB), res: emptyRes(nB), bi: 0, turn: 0, cur: null, ph: 'board' });
+  const boards = gameBoards(g.set.boards), nB = boards.length;
+  Object.assign(g, { teams, sc: teams.map(() => 0), boards, res: emptyRes(nB), bi: 0, turn: 0, cur: null, ph: 'board' });
   lastScores = null;
   oBump();
 }
@@ -2027,17 +2252,18 @@ function oLobbyHTML(v) {
   } else {
     players = `<div class="plist">${pl.map((p, i) => `<div class="pchip${p[3] ? '' : ' off'}"><span class="lamp" style="--c:${OCOLORS[i % OCOLORS.length]}"></span><span class="nm">${esc(p[1])}${p[0] === me.pid ? ' (du)' : ''}</span>${p[0] === v.host ? `<span class="tag">${s.mod ? 'Spielleitung' : 'Gastgeber'}</span>` : ''}${p[3] ? '' : '<span class="hint">nicht verbunden</span>'}</div>`).join('')}</div>`;
   }
-  const maxB = Math.max(1, Math.floor((s.nc || 0) / 5)), boards = clamp(s.boards, 1, maxB);
-  const enough = pl.length >= 2 && s.nc >= 5;
+  const no = s.no || 0, all = no + Math.floor((s.nc || 0) / 5), br = { own: no, ok: all >= 1, min: Math.max(1, no), max: Math.max(1, all) };
+  const maxB = br.max, boards = clamp(s.boards, br.min, br.max);
+  const enough = pl.length >= 2 && br.ok;
   const startbar = isHost ? `<div class="startbar">
       <div class="boards-pick">
         <span class="opt-label" id="lbl-oboards">Boards</span>
         <div class="stepper" role="group" aria-labelledby="lbl-oboards">
-          <button class="icon-btn" id="ob-minus" data-act="o-set" data-k="boards" data-v="-1" ${boards <= 1 ? 'disabled' : ''} aria-label="Ein Board weniger">${icon('minus')}</button>
+          <button class="icon-btn" id="ob-minus" data-act="o-set" data-k="boards" data-v="-1" ${boards <= br.min ? 'disabled' : ''} aria-label="Ein Board weniger">${icon('minus')}</button>
           <span class="stepper-val">${flaps(boards)}<span class="sr" aria-live="polite">${boards} ${boards === 1 ? 'Board' : 'Boards'}</span></span>
           <button class="icon-btn" id="ob-plus" data-act="o-set" data-k="boards" data-v="1" ${boards >= maxB ? 'disabled' : ''} aria-label="Ein Board mehr">${icon('plus')}</button>
         </div>
-        <span class="hint">${s.nc >= 5 ? (pl.length >= 2 ? `${boards * 25} Fragen. Alle Spieler sind bereit?` : 'Warte, bis mindestens ein Mitspieler beigetreten ist.') : '<span class="err">Wähle mindestens fünf Kategorien aus.</span>'}</span>
+        <span class="hint">${!br.ok ? boardsHint(boards, br) : pl.length >= 2 ? `${boardsHint(boards, br)} Alle Spieler sind bereit?` : 'Warte, bis mindestens ein Mitspieler beigetreten ist.'}</span>
       </div>
       <button class="btn btn-brass btn-lg" id="o-start" data-act="o-start" ${enough ? '' : 'disabled'}>Spiel starten</button>
     </div>` : `<div class="startbar"><p>Warte, bis ${esc(hostP ? hostP[1] : 'der Gastgeber')} das Spiel startet.</p></div>`;
@@ -2087,6 +2313,7 @@ function oHostSettingsHTML() {
       <div class="seg" role="group" aria-labelledby="lbl-okm">${Object.entries(KI_MODELS).map(([k, m]) => `<button id="okm-${k}" data-act="o-set" data-k="km" data-v="${k}" aria-pressed="${(s.km || 'opus') === k}">${esc(m.name)}</button>`).join('')}</div>
       <p class="hint" id="okm-note">${esc((KI_MODELS[s.km] || KI_MODELS.opus).note)}</p>
       ${kiBoxHTML()}` : ''}</div>
+    ${boardsPanelHTML()}
     ${catsPanelHTML()}`;
 }
 function oSummaryHTML(v) {
@@ -2094,7 +2321,7 @@ function oSummaryHTML(v) {
   return `<h2 id="h-oset">Einstellungen</h2>
     <ul class="summary-list hint">
       <li>Spielweise: <b>${s.mode === 'teams' ? `in Teams (${s.nt})` : 'jeder für sich'}</b></li>
-      <li>Boards: <b>${s.boards}</b> mit je 25 Fragen</li>
+      <li>Boards: <b>${Math.max(s.boards, s.no || 0)}</b> mit je 25 Fragen${s.no ? `, ${s.no === 1 ? 'ein eigenes kommt' : `${s.no} eigene kommen`} zuerst` : ''}</li>
       <li>Zeit zum Antworten: <b>${s.timer} Sekunden</b></li>
       <li>Falsche Antwort nach dem Buzzern: <b>${s.pen ? 'halbe Punkte Abzug' : 'kein Abzug'}</b></li>
       <li>Wertung der Antworten: <b>${s.ki ? `KI-Spielleiter (${esc((KI_MODELS[s.km] || KI_MODELS.opus).name)})` : s.mod ? 'der Gastgeber moderiert und spielt nicht mit' : 'selbst bewerten und abstimmen'}</b></li>
@@ -2329,8 +2556,8 @@ document.addEventListener('click', e => {
     case 'penalty': prefs.penalty = el.dataset.v === '1'; savePrefs(); render(); break;
     case 'sound': prefs.sound = el.dataset.v === '1'; savePrefs(); render(); break;
     case 'boards': {
-      const maxB = Math.max(1, Math.floor(selectedCats().length / 5));
-      prefs.boards = clamp(clamp(prefs.boards, 1, maxB) + Number(el.dataset.d), 1, maxB); savePrefs(); render(); break;
+      const r = boardRange();
+      prefs.boards = clamp(clamp(prefs.boards, r.min, r.max) + Number(el.dataset.d), r.min, r.max); savePrefs(); render(); break;
     }
     case 'start': startGame(); break;
     case 'resume': game = savedGame; savedGame = null; lastScores = null; ui.mode = 'game'; render(); updatePresence(); broadcastState(); break;
@@ -2352,6 +2579,15 @@ document.addEventListener('click', e => {
     }
     case 'ed-import': openImport(); break;
     case 'ed-export': openExport(); break;
+    /* Eigene Boards */
+    case 'ownb-import': openBoardImport(); break;
+    case 'bimp-run': if (importBoards()) catsChanged(); break;
+    case 'ownb-toggle': { const b = ownBoards.find(x => x.id === el.dataset.id); if (b) { b.on = !b.on; saveBoards(); catsChanged(); } break; }
+    case 'ownb-del': {
+      const b = ownBoards.find(x => x.id === el.dataset.id); if (!b) break;
+      confirmBox('Board löschen?', `„${b.name}“ wird mit allen Fragen aus diesem Browser gelöscht.`, 'Löschen', () => { ownBoards = ownBoards.filter(x => x !== b); saveBoards(); catsChanged(); });
+      break;
+    }
     case 'imp-run': {
       const ta = $('#imp-text'), err = $('#imp-err');
       try {
@@ -2462,6 +2698,7 @@ document.addEventListener('submit', e => {
 });
 
 document.addEventListener('change', e => {
+  if (e.target.id === 'bimp-file' && e.target.files && e.target.files[0]) { readBoardFile(e.target.files[0]); return; }
   if (e.target.id !== 'imp-file' || !e.target.files || !e.target.files[0]) return;
   e.target.files[0].text().then(t => { const ta = $('#imp-text'); if (ta) ta.value = t; }).catch(() => { const err = $('#imp-err'); if (err) err.textContent = 'Die Datei ließ sich nicht lesen.'; });
 });
@@ -2842,7 +3079,7 @@ function remoteHTML() {
    Start
    ========================================================= */
 function boot(data) {
-  loadPrefs(); loadCustom(); loadMe(); kiLoad();
+  loadPrefs(); loadCustom(); loadBoards(); loadMe(); kiLoad();
   roomState = HAS_ROOM ? 'pending' : 'none';
   const so = store.get(K.online);
   if (so && so.id && so.host === me.pid && Array.isArray(so.pl) && so.ph !== 'gameEnd') savedOnline = so;

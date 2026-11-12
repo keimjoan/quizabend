@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0b231e">
+<meta name="description" content="Eigene Boards für den Quizabend erstellen: Vorlagen für Excel und Google Sheets, Claude-Skill und Anleitung">
+<title>Eigene Boards</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders:opsz,wght@10..72,700..900&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&display=swap">
+<style>
+:root {
+  /* Dieselben Tokens wie im Spiel (index.html) */
+  --stage: #0b231e;
+  --plate: #143d33;
+  --plate-dark: #0e2c25;
+  --ink: #f2e9d3;
+  --ink-dim: #a7beb4;
+  --brass: #e3b04b;
+  --good: #66dd98;
+  --line: rgba(242, 233, 211, .16);
+  --font-display: "Big Shoulders", "Big Shoulders Display", "Avenir Next Condensed", "Arial Narrow", "Roboto Condensed", sans-serif;
+  --font-body: "Atkinson Hyperlegible", system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+body {
+  margin: 0;
+  background: radial-gradient(130% 90% at 50% -20%, #15403a 0%, var(--stage) 55%) fixed, var(--stage);
+  color: var(--ink); font-family: var(--font-body); font-size: 17px; line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: var(--brass); text-underline-offset: 3px; }
+:focus-visible { outline: 3px solid var(--brass); outline-offset: 2px; }
+h1, h2, h3 { margin: 0; font-family: var(--font-display); font-weight: 900; line-height: 1.02; text-wrap: balance; }
+p { margin: 0; }
+.page { max-width: 1040px; margin: 0 auto; padding: clamp(20px, 4vw, 48px) 16px 72px; display: grid; gap: clamp(26px, 4vw, 44px); }
+.top { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; }
+.top .spacer { flex: 1 1 auto; }
+.hero { display: grid; gap: 14px; }
+.hero h1 { font-size: clamp(46px, 8vw, 92px); letter-spacing: .01em; }
+.hero h1 span { color: var(--brass); }
+.lead { font-size: clamp(18px, 2.2vw, 21px); color: var(--ink-dim); max-width: 62ch; }
+.toc { display: flex; flex-wrap: wrap; gap: 8px; padding: 0; margin: 0; list-style: none; }
+.toc a { display: inline-flex; align-items: center; min-height: 38px; padding: 0 14px; border-radius: 999px; color: var(--ink); text-decoration: none; font-weight: 700; font-size: 15px; box-shadow: inset 0 0 0 1px var(--line); }
+.toc a:hover { background: rgba(242,233,211,.07); }
+section { display: grid; gap: 16px; scroll-margin-top: 16px; }
+section > h2 { font-size: clamp(32px, 4.4vw, 46px); display: flex; align-items: baseline; gap: 14px; }
+section > h2 .no { font-size: .62em; color: var(--brass); font-variant-numeric: tabular-nums; }
+.panel { display: grid; gap: 14px; padding: clamp(16px, 2.4vw, 24px); border-radius: 18px; background: rgba(14, 44, 37, .82); box-shadow: inset 0 0 0 1px var(--line); }
+.panel h3 { font-size: 28px; }
+.hint { color: var(--ink-dim); font-size: 15px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); gap: 16px; }
+.card { display: grid; gap: 10px; align-content: start; }
+.card .tag { justify-self: start; font-size: 13px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--brass); }
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: .5em; justify-self: start; min-height: 48px; padding: 0 20px; border-radius: 12px; font-weight: 700; font-size: 17px; text-decoration: none; transition: filter .12s ease; }
+.btn:hover { filter: brightness(1.08); }
+.btn-brass { background: var(--brass); color: #241703; }
+.btn-plain { color: var(--ink); box-shadow: inset 0 0 0 1px var(--line); }
+.btn-plain:hover { background: rgba(242,233,211,.07); filter: none; }
+.btn svg { width: 1.1em; height: 1.1em; flex: none; }
+.btns { display: flex; flex-wrap: wrap; gap: 10px; }
+ol.steps { margin: 0; padding: 0; list-style: none; counter-reset: s; display: grid; gap: 12px; }
+ol.steps li { counter-increment: s; display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 12px; align-items: start; }
+ol.steps li::before { content: counter(s); display: grid; place-items: center; width: 34px; height: 34px; border-radius: 9px; background: var(--plate); box-shadow: inset 0 0 0 1px var(--line); font-family: var(--font-display); font-weight: 900; font-size: 20px; color: var(--brass); }
+ul.plain { margin: 0; padding-left: 1.2em; display: grid; gap: 6px; }
+.tablewrap { overflow-x: auto; border-radius: 12px; box-shadow: inset 0 0 0 1px var(--line); }
+table { border-collapse: collapse; width: 100%; min-width: 620px; font-size: 15px; }
+th, td { padding: 9px 12px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--line); }
+th { background: var(--brass); color: #241703; font-weight: 700; }
+td.n { font-variant-numeric: tabular-nums; text-align: center; }
+td.k { font-weight: 700; color: var(--ink); background: rgba(102, 221, 152, .07); }
+tr:last-child td { border-bottom: 0; }
+td.more { color: var(--ink-dim); font-style: italic; text-align: center; }
+pre, code { font-family: var(--mono); }
+code { font-size: .9em; padding: 1px 5px; border-radius: 5px; background: var(--stage); }
+pre { margin: 0; padding: 14px 16px; border-radius: 12px; background: var(--stage); overflow-x: auto; font-size: 13.5px; line-height: 1.55; box-shadow: inset 0 0 0 1px var(--line); }
+.quote { padding: 12px 16px; border-left: 3px solid var(--brass); background: rgba(227,176,75,.08); border-radius: 0 10px 10px 0; }
+footer { color: var(--ink-dim); font-size: 15px; display: flex; flex-wrap: wrap; gap: 8px 20px; }
+</style>
+</head>
+<body>
+<main class="page">
+  <nav class="top" aria-label="Navigation">
+    <a class="btn btn-plain" href="./" id="back"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>Zurück zum Spiel</a>
+  </nav>
+
+  <header class="hero">
+    <h1>Eigene <span>Boards</span></h1>
+    <p class="lead">Ein Board hat fünf Kategorien mit je fünf Fragen von 100 bis 500 Punkten. Schreib es selbst in der Vorlage für Excel oder Google Sheets, oder lass es dir von Claude schreiben. Danach importierst du es mit einem Klick ins Spiel. Eigene Boards werden zuerst gespielt.</p>
+    <ul class="toc">
+      <li><a href="#vorlagen">Vorlagen</a></li>
+      <li><a href="#ausfuellen">Ausfüllen</a></li>
+      <li><a href="#claude">Mit Claude</a></li>
+      <li><a href="#import">Ins Spiel holen</a></li>
+      <li><a href="#tipps">Tipps</a></li>
+      <li><a href="#json">JSON-Format</a></li>
+    </ul>
+  </header>
+
+  <section id="vorlagen" aria-labelledby="h-vorlagen">
+    <h2 id="h-vorlagen"><span class="no">1</span>Vorlagen herunterladen</h2>
+    <div class="grid">
+      <div class="panel card">
+        <span class="tag">Excel</span>
+        <h3>Leere Vorlage</h3>
+        <p>Fünf Kategorien mit je fünf Zeilen sind schon angelegt. Du trägst nur Namen, Fragen und Antworten ein.</p>
+        <a class="btn btn-brass" id="dl-vorlage" href="vorlagen/quizabend-board-vorlage.xlsx" download><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11"/><path d="m7 10 5 5 5-5"/><path d="M5 20h14"/></svg>Excel-Vorlage (.xlsx)</a>
+      </div>
+      <div class="panel card">
+        <span class="tag">Google Sheets</span>
+        <h3>Vorlage in Google Sheets</h3>
+        <p>Lade die Excel-Vorlage herunter. In Google Sheets <b>Datei &gt; Importieren &gt; Hochladen</b> wählen und die Datei hineinziehen. Fertig ausgefüllt über <b>Datei &gt; Herunterladen &gt; Microsoft Excel (.xlsx)</b> speichern. Oder die Zellen einfach kopieren und im Spiel einfügen.</p>
+        <a class="btn btn-plain" id="dl-sheets" href="vorlagen/quizabend-board-vorlage.xlsx" download>Vorlage herunterladen (.xlsx)</a>
+      </div>
+      <div class="panel card">
+        <span class="tag">Beispiel</span>
+        <h3>Fertiges Beispiel-Board</h3>
+        <p>So sieht ein ausgefülltes Board aus: Geografie, Geschichte, Naturwissenschaft, Weltraum und Sport. Zum Anschauen oder direkt zum Ausprobieren.</p>
+        <div class="btns">
+          <a class="btn btn-plain" id="dl-beispiel" href="vorlagen/quizabend-board-beispiel.xlsx" download>Beispiel (.xlsx)</a>
+          <a class="btn btn-plain" id="dl-beispiel-json" href="vorlagen/quizabend-board-beispiel.json" download>Beispiel (.json)</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="ausfuellen" aria-labelledby="h-ausfuellen">
+    <h2 id="h-ausfuellen"><span class="no">2</span>So füllst du die Vorlage aus</h2>
+    <div class="panel">
+      <p>Im Blatt <b>Board</b> steht eine Zeile pro Frage, also 25 Zeilen für ein Board. Die Kopfzeile bleibt, wie sie ist.</p>
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th>Board</th><th>Kategorie</th><th>Punkte</th><th>Frage</th><th>Antwort</th></tr></thead>
+          <tbody>
+            <tr><td class="k">Geburtstag Lisa</td><td class="k">Lisa privat</td><td class="n">100</td><td>In welcher Stadt ist Lisa aufgewachsen?</td><td>Bremen</td></tr>
+            <tr><td></td><td></td><td class="n">200</td><td>Wie heißt Lisas Katze?</td><td>Mimi</td></tr>
+            <tr><td colspan="5" class="more">… bis 500 Punkte, dann die nächste Kategorie …</td></tr>
+            <tr><td></td><td class="k">Unsere Urlaube</td><td class="n">100</td><td>Auf welcher Insel waren wir 2019?</td><td>Mallorca</td></tr>
+            <tr><td colspan="5" class="more">… insgesamt fünf Kategorien mit je fünf Fragen</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <ul class="plain">
+        <li><b>Board</b> und <b>Kategorie</b> nur in die erste Zeile schreiben. Leere Zellen darunter gehören zur selben Kategorie bzw. zum selben Board.</li>
+        <li><b>Punkte</b> 100, 200, 300, 400, 500: von leicht nach schwer. Die Reihenfolge der Zeilen ist egal, das Spiel sortiert selbst.</li>
+        <li><b>Antworten</b> kurz halten. Andere Schreibweisen in Klammern dahinter, zum Beispiel „Der Pazifik (Pazifischer Ozean)“.</li>
+        <li><b>Mehrere Boards</b> in einer Datei: weitere 25 Zeilen darunter, mit neuem Board-Namen in der ersten Zeile. Sie werden in dieser Reihenfolge gespielt.</li>
+        <li>Statt Excel geht auch eine CSV-Datei mit denselben Spalten (Komma, Semikolon oder Tabulator).</li>
+      </ul>
+    </div>
+  </section>
+
+  <section id="claude" aria-labelledby="h-claude">
+    <h2 id="h-claude"><span class="no">3</span>Boards von Claude schreiben lassen</h2>
+    <div class="grid">
+      <div class="panel card">
+        <span class="tag">Claude-Skill</span>
+        <h3>Skill „quizabend-board“</h3>
+        <p>Der Skill bringt Claude bei, wie ein gutes Board aussieht: fünf Kategorien, steigende Schwierigkeit, eindeutige Antworten mit Varianten in Klammern. Claude liefert eine JSON-Datei, die du direkt importierst.</p>
+        <a class="btn btn-brass" id="dl-skill" href="vorlagen/quizabend-board-skill.zip" download><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11"/><path d="m7 10 5 5 5-5"/><path d="M5 20h14"/></svg>Claude-Skill (.zip)</a>
+      </div>
+      <div class="panel card">
+        <h3>Skill einrichten</h3>
+        <ol class="steps">
+          <li><p><b>In Claude (Web oder App):</b> In den Einstellungen bei <b>Fähigkeiten</b> den Bereich <b>Skills</b> öffnen, „Skill hochladen“ wählen und die ZIP-Datei auswählen. Je nach Version heißen die Menüpunkte etwas anders.</p></li>
+          <li><p><b>In Claude Code:</b> Die ZIP-Datei in den Ordner <code>~/.claude/skills/</code> entpacken, sodass dort <code>quizabend-board/SKILL.md</code> liegt.</p></li>
+          <li><p>Danach einfach im Chat nach einem Board fragen. Claude nimmt den Skill von selbst.</p></li>
+        </ol>
+      </div>
+    </div>
+    <div class="panel">
+      <h3>Zum Beispiel so fragen</h3>
+      <p class="quote">Schreib mir zwei Quizabend-Boards zum Thema 90er-Jahre, für eine Runde Erwachsener. Ein Board eher leicht, eins schwer.</p>
+      <p class="quote">Mach ein Quizabend-Board für den 40. Geburtstag von Tom. Hier ein paar Fakten über ihn: …</p>
+      <p class="hint">Bei persönlichen Themen brauchst du Claude die Fakten zu geben, sonst müsste es raten. Prüf die Fragen vor dem Spielabend kurz durch.</p>
+    </div>
+  </section>
+
+  <section id="import" aria-labelledby="h-import">
+    <h2 id="h-import"><span class="no">4</span>Board ins Spiel holen</h2>
+    <div class="panel">
+      <ol class="steps">
+        <li><p>Öffne das Spiel. Auf der Startseite steht der Bereich <b>Eigene Boards</b>, im Online-Spiel in der Lobby beim Gastgeber.</p></li>
+        <li><p>Klicke auf <b>Board importieren</b> und wähle die Datei: Excel (.xlsx), CSV oder die JSON-Datei von Claude. Oder markiere die Zellen in Excel bzw. Google Sheets samt Kopfzeile, kopiere sie und füge sie ins Feld ein.</p></li>
+        <li><p>Klicke auf <b>Importieren</b>. Fehlt etwas, sagt das Spiel genau, wo, zum Beispiel „Kategorie Sport, 300 Punkte: Die Antwort fehlt“.</p></li>
+        <li><p>Ausgewählte eigene Boards werden zuerst gespielt. Mit „Boards“ unten auf der Seite stellst du ein, ob danach noch zufällige Boards aus den eingebauten Kategorien kommen.</p></li>
+      </ol>
+      <p class="hint">Eigene Boards werden nur in deinem Browser gespeichert. Auf einem anderen Gerät importierst du sie einfach noch einmal. Im Online-Spiel reicht es, wenn der Gastgeber das Board hat: Die Mitspieler sehen die Fragen automatisch.</p>
+    </div>
+  </section>
+
+  <section id="tipps" aria-labelledby="h-tipps">
+    <h2 id="h-tipps"><span class="no">5</span>Tipps für gute Fragen</h2>
+    <div class="panel">
+      <ul class="plain">
+        <li>100 Punkte weiß fast jeder, 500 nur Kenner. Eine gleichmäßige Steigerung macht das Spiel spannend.</li>
+        <li>Jede Frage hat genau eine richtige Antwort. Kurze Antworten (ein Begriff, ein Name, eine Zahl) lassen sich leicht bewerten.</li>
+        <li>Fragen so schreiben, dass man sie gut vorlesen kann. Die Antwort sollte nicht schon in der Frage stecken.</li>
+        <li>Kategorienamen kurz halten, damit sie auf der Tafel gut lesbar sind.</li>
+        <li>Mit dem KI-Spielleiter im Online-Spiel helfen Varianten in Klammern, damit auch „Pazifik“ für „Der Pazifische Ozean“ zählt.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section id="json" aria-labelledby="h-json">
+    <h2 id="h-json"><span class="no">6</span>Für Fortgeschrittene: JSON-Format</h2>
+    <div class="panel">
+      <p>Das Spiel liest auch dieses Format, zum Beispiel aus eigenen Skripten. Jedes Board braucht genau fünf Kategorien, jede Kategorie genau fünf Fragen.</p>
+      <pre>{
+  "boards": [
+    {
+      "name": "Name des Boards",
+      "kategorien": [
+        {
+          "name": "Kategorie 1",
+          "fragen": [
+            { "punkte": 100, "frage": "Leichte Frage?", "antwort": "Antwort" },
+            { "punkte": 200, "frage": "…", "antwort": "…" },
+            { "punkte": 300, "frage": "…", "antwort": "…" },
+            { "punkte": 400, "frage": "…", "antwort": "…" },
+            { "punkte": 500, "frage": "Schwere Frage?", "antwort": "Antwort" }
+          ]
+        }
+      ]
+    }
+  ]
+}</pre>
+      <p class="hint">Einzelne Kategorien statt ganzer Boards importierst du auf der Startseite über „Eigene Fragen schreiben“. Die landen dann im Topf, aus dem die Boards zufällig gezogen werden.</p>
+    </div>
+  </section>
+
+  <footer>
+    <a href="./">Zurück zum Spiel</a>
+    <span>Quizabend, ein Punkte-Quiz für Freunde</span>
+  </footer>
+</main>
+</body>
+</html>

@@ -495,6 +495,30 @@ const MOCK = `(() => {
   g = await mState();
   assert(g.turn === 1, 'Danach ist Max dran');
 
+  // ---------- [9] Eigenes Board in der Lobby: Gastgeber importiert, alle spielen es zuerst ----------
+  console.log('\n[9] Online mit eigenem Board');
+  for (const p of [mh, ml, mm]) await p.close();
+  const bh = await newPlayer('own-host', { width: 1280, height: 800 });
+  await bh.waitForSelector('#me-name'); await bh.fill('#me-name', 'Joan');
+  await bh.click('#o-create'); await bh.waitForSelector('.lobby');
+  const bl = await mPlayer('own-lea', 'Lea');
+  await bh.waitForFunction(() => document.querySelectorAll('.pchip').length === 2, null, { timeout: 5000 });
+  const bState = () => bh.evaluate(() => JSON.parse(localStorage.getItem('quizabend.online.v1')));
+  while ((await bState()).set.boards > 1) await bh.click('#ob-minus');
+  const ownJSON = { boards: [{ name: 'Lobby-Board', kategorien: [1, 2, 3, 4, 5].map(k => ({ name: `Eigen ${k}`, fragen: VALUES.map(p => ({ punkte: p, frage: `Frage ${k}/${p}`, antwort: `L${k}${p}` })) })) }] };
+  await bh.click('#ownb-import');
+  await bh.fill('#bimp-text', JSON.stringify(ownJSON));
+  await bh.click('#bimp-run');
+  await bh.waitForSelector('.obrow');
+  await bl.waitForSelector('text=ein eigenes kommt zuerst', { timeout: 5000 });
+  assert(await bl.$('#ownb-import') === null, 'Nur der Gastgeber importiert Boards, Mitspieler sehen es in den Einstellungen');
+  await bh.click('#o-start');
+  for (const p of [bh, bl]) await p.waitForSelector('.board', { timeout: 5000 });
+  g = await bState();
+  assert(g.boards.length === 1 && g.boards[0].cats.map(c => c.name).join(',') === 'Eigen 1,Eigen 2,Eigen 3,Eigen 4,Eigen 5', 'Online wird das eigene Board gespielt');
+  assert((await bl.textContent('.board')).includes('Eigen 3'), 'Mitspieler sehen die eigenen Kategorien');
+  await bh.screenshot({ path: `${SHOTS}/70-own-board-online.png` });
+
   await browser.close();
   server.close();
   console.log('\nFehler im Browser:', errors.length ? '\n' + errors.join('\n') : 'keine');

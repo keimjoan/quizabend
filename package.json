@@ -9,7 +9,8 @@
     "test": "node tests/run-local.js && node tests/run-online.js",
     "test:local": "node tests/run-local.js",
     "test:online": "node tests/run-online.js",
-    "test:server": "node tests/run-online.js --server ws://127.0.0.1:8787"
+    "test:server": "node tests/run-online.js --server ws://127.0.0.1:8787",
+    "vorlagen": "node tools/vorlagen.js"
   },
   "devDependencies": {
     "playwright": "^1.48.0"

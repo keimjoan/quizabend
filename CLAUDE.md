@@ -7,6 +7,8 @@ Ein Punkte-Quiz im Browser zum Spielen mit Freunden: Boards mit 5 Kategorien × 
 - `index.html` ist das ganze Spiel: CSS, Fragenkatalog und JavaScript in einer Datei, ohne Build-Schritt und ohne Bibliotheken. Schriften kommen von Google Fonts (Big Shoulders, Atkinson Hyperlegible) mit Ersatzschriften.
 - Reihenfolge in der Datei: Design-Tokens (`:root`) → CSS → Fragenkatalog (`RAW`, 25 Kategorien) → Grundlagen und Töne → Spiel an einem Bildschirm → Ansichten → Online-Spiel (Gastgeber, Spieler, Ansichten) → Eingaben → Verbindung (`initRoom`) → Start (`boot`).
 - `tools/serve.js` startet einen kleinen Webserver ohne Abhängigkeiten (`npm start`, dann http://localhost:8080).
+- `boards.html` ist die Seite „Eigene Boards“ (Anleitung und Downloads), verlinkt auf der Startseite (`#link-boards`) und im Bereich „Eigene Boards“. Dieselben Tokens wie im Spiel.
+- `vorlagen/`: Excel-Vorlage, Beispiel-Board (.xlsx, .json) und der Claude-Skill als ZIP. Alles außer `vorlagen/skill/quizabend-board/SKILL.md` erzeugt `npm run vorlagen` (Skript `tools/vorlagen.js`, ohne Abhängigkeiten, das Beispiel kommt aus `RAW`). Nach Änderungen am Skill oder am Tabellenformat neu erzeugen.
 - Webapp-Dateien: `manifest.webmanifest`, `icon.svg` und die PNG-Icons daraus (`npm run icons`, Skript `tools/icons.js`), `sw.js` als Offline-Speicher (erst Netz, sonst Speicher). `sw.js` wird nur über https und außerhalb von Claude registriert.
 - `server/` ist der Raum-Server für den Online-Modus (Cloudflare Worker mit Durable Object, eigene `package.json` mit Wrangler).
 - `tests/` enthält zwei Playwright-Tests, die komplette Spiele durchspielen und die Punkte nachrechnen.
@@ -24,6 +26,11 @@ Ein Punkte-Quiz im Browser zum Spielen mit Freunden: Boards mit 5 Kategorien × 
 - Der Zug geht strikt reihum. Ist ein Board leer, kommt das nächste.
 - Die Spielleitung bewertet per Klick. Die Lösung sieht sie über „Lösung spicken“ oder auf dem Handy („Als Spielleitung verbinden“).
 - Rückgängig (Strg+Z), Punkte von Hand anpassen, optionale Antwortzeit, Spielstand übersteht Neuladen.
+
+### Eigene Boards (beide Spielarten)
+- Ein eigenes Board ist ein fester Satz aus 5 Kategorien (`ownBoards`, gespeichert unter `quizabend.boards.v1`, höchstens 30). Ausgewählte eigene Boards werden zuerst gespielt, in ihrer Reihenfolge, danach zufällige aus den Kategorien (`gameBoards()`, `boardRange()`). Online importiert nur der Gastgeber, die Ansicht trägt die Anzahl als `set.no`.
+- Import (`parseBoards()`): Excel-Datei (.xlsx, gelesen ohne Bibliothek in `xlsxSheets()`), CSV mit Komma oder Semikolon, eingefügte Zellen aus Excel oder Google Sheets, oder JSON `{"boards": [{"name", "kategorien": [{"name", "fragen": [{"punkte", "frage", "antwort"}]}]}]}` (Format des Claude-Skills).
+- Tabellenformat: Kopfzeile Board, Kategorie, Punkte, Frage, Antwort (Board optional, sonst Dateiname). Board und Kategorie gelten nach unten weiter. Jede Kategorie braucht genau 5 Fragen, jedes Board genau 5 Kategorien, sonst nennt die Fehlermeldung die Stelle.
 
 ### Online, jeder am eigenen PC (Reiter „Online, jeder am eigenen PC“)
 - Ein Gastgeber eröffnet eine Lobby und spielt mit, alle anderen melden sich mit ihrem Namen an (bis 12). Beim Start einstellbar: jeder für sich oder Teams (2 bis 6).
@@ -68,8 +75,8 @@ npx playwright install chromium
 npm test
 ```
 
-- `npm run test:local`: Spiel an einem Bildschirm, eigene Fragen, sechs Teams, Handy als Spielleitung.
-- `npm run test:online`: Gastgeber und zwei Spieler in getrennten Browsern, jeder für sich und in Teams, über den nachgebauten Raum (`MOCK`). Danach ein Spiel mit KI-Spielleiter gegen eine nachgestellte Claude-API und ein Spiel, das der Gastgeber moderiert.
+- `npm run test:local`: Spiel an einem Bildschirm, eigene Fragen, eigene Boards aus den Vorlagen (Excel, CSV, eingefügte Zellen, JSON), sechs Teams, Handy als Spielleitung.
+- `npm run test:online`: Gastgeber und zwei Spieler in getrennten Browsern, jeder für sich und in Teams, über den nachgebauten Raum (`MOCK`). Danach ein Spiel mit KI-Spielleiter gegen eine nachgestellte Claude-API ein Spiel, das der Gastgeber moderiert, und ein Spiel mit eigenem Board.
 - `npm run test:server`: derselbe Online-Test über den echten Raum-Server. Vorher im Ordner `server` `npm run dev` starten (http://127.0.0.1:8787). Nach Änderungen an `webRoom()` oder `server/` laufen lassen.
 - Bildschirmfotos landen in `shots/`. Nach jeder Änderung an Spielregeln oder Punkten beide Tests laufen lassen.
 
