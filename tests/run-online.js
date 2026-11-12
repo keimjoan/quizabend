@@ -309,7 +309,8 @@ const MOCK = `(() => {
     if (req.method() === 'OPTIONS') return route.fulfill({ status: 204, headers: cors });
     kiFrom.add(tag);
     if (h['x-api-key'] !== TEST_KEY) return json(route, 401, { type: 'error', error: { type: 'authentication_error', message: 'invalid x-api-key' } });
-    if (req.url().endsWith('/v1/models/claude-opus-5-5')) return json(route, 200, { type: 'model', id: 'claude-opus-5-5', display_name: 'Claude Opus 5.5' });
+    const mm = /\/v1\/models\/([a-z0-9-]+)$/.exec(req.url());
+    if (mm) return json(route, 200, { type: 'model', id: mm[1], display_name: mm[1] });
     const body = JSON.parse(req.postData());
     kiCalls.push({ headers: h, body, url: req.url() });
     if (kiMode === 'down') return json(route, 500, { type: 'error', error: { type: 'api_error', message: 'kaputt' } });
@@ -335,7 +336,12 @@ const MOCK = `(() => {
   // Einschalten, Start ohne Schlüssel, falsche Schlüssel, richtiger Schlüssel
   await kh.click('#oki-1');
   await kh.waitForSelector('#ki-key');
-  await kl.waitForSelector('text=Wertung der Antworten: KI-Spielleiter');
+  await kl.waitForSelector('text=Wertung der Antworten: KI-Spielleiter (Claude Opus 5.5)');
+  await kh.click('#okm-haiku');
+  await kl.waitForSelector('text=Wertung der Antworten: KI-Spielleiter (Claude Haiku 5.5)');
+  assert((await kh.textContent('.kibox')).includes('Claude Haiku 5.5'), 'Modellauswahl: Mitspieler und Kostenhinweis folgen der Wahl');
+  await kh.click('#okm-opus');
+  await kl.waitForSelector('text=Wertung der Antworten: KI-Spielleiter (Claude Opus 5.5)');
   await kh.click('#o-start'); await kh.waitForTimeout(300);
   assert(await kh.isVisible('.lobby') && (await kh.textContent('#toast')).includes('API-Schlüssel'), 'Ohne Schlüssel startet das Spiel mit KI nicht');
   await kh.fill('#ki-key', 'abc'); await kh.click('#ki-check');
@@ -410,6 +416,21 @@ const MOCK = `(() => {
   await kl.waitForSelector('#o-next', { timeout: 15000 });
   g = await kState();
   assert(JSON.stringify(g.sc) === '[600,300]', 'Nach dem Neuladen des Gastgebers wertet die KI weiter: ' + g.sc);
+
+  // Mit Claude Haiku 5.5: anderes Modell, ohne Ersatzmodell (das bietet Anthropic für Haiku 5.5 nicht an)
+  await kh.click('#t-menu'); await kh.click('[data-act="o-lobby-ask"]'); await kh.click('[data-act="modal-ok"]');
+  await kh.waitForSelector('#okm-haiku'); await kh.click('#okm-haiku');
+  await kh.click('#o-start');
+  for (const p of [kh, kl]) await p.waitForSelector('.board', { timeout: 5000 });
+  const before = kiCalls.length;
+  await kh.click('#tile-0-0');
+  await kAnswer(kh, await kSol(0, 0));
+  await kh.waitForSelector('#o-next', { timeout: 8000 });
+  const hc = kiCalls[kiCalls.length - 1];
+  assert(kiCalls.length === before + 1 && hc.body.model === 'claude-haiku-5-5' && !('fallbacks' in hc.body) && !hc.headers['anthropic-beta'], 'Haiku: richtiges Modell, ohne Ersatzmodell und ohne Beta-Kopf');
+  assert(kiCalls.filter(c => c.body.model === 'claude-opus-5-5').every(c => c.body.fallbacks === 'default' && c.headers['anthropic-beta'] === 'server-side-fallback-2026-07-01'), 'Opus: mit Ersatzmodell und Beta-Kopf');
+  g = await kState();
+  assert(JSON.stringify(g.sc) === '[100,0]', 'Haiku wertet richtig: ' + g.sc);
 
   // Der Schlüssel verlässt den Browser des Gastgebers nur in Richtung Anthropic
   const leak = await kh.evaluate(k => Object.keys(localStorage).filter(n => (localStorage.getItem(n) || '').includes(k)), TEST_KEY);

@@ -703,7 +703,7 @@ let savedOnline = null;
 function defaultPrefs() {
   return {
     teams: [{ name: '', color: 0, key: 'a' }, { name: '', color: 1, key: 'l' }], boards: 2, timer: 0, penalty: true, sound: true, off: [],
-    tab: HAS_ROOM ? 'online' : 'local', oset: { mode: 'solo', nt: 2, tn: ['', '', '', '', '', ''], timer: 60, pen: true, ki: false }
+    tab: HAS_ROOM ? 'online' : 'local', oset: { mode: 'solo', nt: 2, tn: ['', '', '', '', '', ''], timer: 60, pen: true, ki: false, km: 'opus' }
   };
 }
 function loadPrefs() {
@@ -728,7 +728,8 @@ function loadPrefs() {
       tn: Array.from({ length: 6 }, (_, i) => String((Array.isArray(os.tn) && os.tn[i]) || '').slice(0, 24)),
       timer: [30, 60, 90].includes(os.timer) ? os.timer : 60,
       pen: os.pen !== false,
-      ki: os.ki === true
+      ki: os.ki === true,
+      km: os.km === 'haiku' ? 'haiku' : 'opus'
     }
   };
 }
@@ -1501,7 +1502,7 @@ function oCreate() {
   Object.assign(on, { role: 'host', gid: 'g' + rid(10), view: null, draft: '', sent: '', myVote: null, myCounter: null, err: '', stale: false });
   on.og = {
     id: on.gid, host: me.pid, v: 0, ph: 'lobby',
-    set: { mode: s.mode, nt: s.nt, tn: s.tn.slice(0, 6), boards: prefs.boards, timer: s.timer, pen: s.pen, ki: !!s.ki },
+    set: { mode: s.mode, nt: s.nt, tn: s.tn.slice(0, 6), boards: prefs.boards, timer: s.timer, pen: s.pen, ki: !!s.ki, km: s.km === 'haiku' ? 'haiku' : 'opus' },
     pl: [{ id: me.pid, n: name, slot: null, t: null, on: true, offAt: null }],
     teams: [], boards: [], sc: [], bi: 0, turn: 0, res: [], qn: 0, cur: null
   };
@@ -1534,7 +1535,7 @@ function oView() {
   const sel = selectedCats();
   const v = {
     id: g.id, ver: g.v, ph: g.ph, host: g.host, qn: g.qn,
-    set: { mode: g.set.mode, nt: g.set.nt, tn: g.set.tn.slice(0, g.set.nt), boards: g.set.boards, timer: g.set.timer, pen: g.set.pen, ki: g.set.ki ? 1 : 0, nc: sel.length },
+    set: { mode: g.set.mode, nt: g.set.nt, tn: g.set.tn.slice(0, g.set.nt), boards: g.set.boards, timer: g.set.timer, pen: g.set.pen, ki: g.set.ki ? 1 : 0, km: g.set.km === 'haiku' ? 'haiku' : 'opus', nc: sel.length },
     pl: g.pl.map(p => [p.id, p.n, g.ph === 'lobby' ? p.slot : p.t, p.on ? 1 : 0])
   };
   if (g.ph !== 'lobby' && g.boards.length) {
@@ -1730,8 +1731,9 @@ function oSet(k, val) {
   else if (k === 'timer') s.timer = [30, 60, 90].includes(val) ? val : 60;
   else if (k === 'pen') s.pen = !!val;
   else if (k === 'ki') s.ki = !!val;
+  else if (k === 'km') { s.km = val === 'haiku' ? 'haiku' : 'opus'; kiErr = ''; }
   g.pl.forEach(p => { if (p.slot != null && p.slot >= s.nt) p.slot = null; });
-  prefs.oset = { mode: s.mode, nt: s.nt, tn: s.tn.slice(0, 6), timer: s.timer, pen: s.pen, ki: !!s.ki }; savePrefs();
+  prefs.oset = { mode: s.mode, nt: s.nt, tn: s.tn.slice(0, 6), timer: s.timer, pen: s.pen, ki: !!s.ki, km: s.km === 'haiku' ? 'haiku' : 'opus' }; savePrefs();
   oBump();
 }
 function oStartGame() {
@@ -1775,7 +1777,13 @@ function oBackToLobby() {
    und bezahlt so seine Runden selbst. Der Schlüssel bleibt in seinem Browser (kiKey) und geht nur an
    api.anthropic.com. Er steht nie im Spielstand, in der Präsenz oder in einem Ereignis.
    Scheitert die Anfrage, wird diese Antwort wie ohne KI bewertet (kiFallback). */
-const KI_MODEL = 'claude-opus-5-5', KI_API = 'https://api.anthropic.com/v1', KI_BETA = 'server-side-fallback-2026-07-01';
+const KI_API = 'https://api.anthropic.com/v1', KI_BETA = 'server-side-fallback-2026-07-01';
+/* Wählbare Modelle. fb: Anthropic bietet ein Ersatzmodell an, wenn das Modell eine Anfrage ablehnt (bei Haiku 5.5 nicht). */
+const KI_MODELS = {
+  opus: { id: 'claude-opus-5-5', name: 'Claude Opus 5.5', fb: true, cost: 'grob 0,2 bis 1 Cent pro Antwort', note: 'Wertet am zuverlässigsten, auch bei Grenzfällen.' },
+  haiku: { id: 'claude-haiku-5-5', name: 'Claude Haiku 5.5', fb: false, cost: 'weniger als 0,01 Cent pro Antwort', note: 'Viel günstiger und schneller, liegt bei kniffligen Antworten eher daneben.' }
+};
+const kiModel = () => KI_MODELS[on.og && on.og.set.km] || KI_MODELS.opus;
 const KI_SYSTEM = `Du bist der Spielleiter eines deutschsprachigen Quizabends unter Freunden. Du bekommst eine Quizfrage, die Musterlösung und die eingetippte Antwort eines Spielers und entscheidest, ob die Antwort als richtig zählt.
 
 Maßstab ist ein fairer menschlicher Spielleiter: Die Antwort zählt, wenn klar ist, dass der Spieler das Gesuchte gemeint hat. Tippfehler, Groß- und Kleinschreibung, fehlende Artikel, Umlaut-Schreibweisen, gängige andere Namen oder Schreibweisen und Übersetzungen sind in Ordnung. Bei Personen reicht der Nachname, wenn er eindeutig ist. Eine genauere Antwort als die Musterlösung zählt. Zahlen und Jahreszahlen müssen stimmen, es sei denn, die Musterlösung nennt selbst einen Spielraum.
@@ -1811,7 +1819,7 @@ async function kiCheck() {
   kiChecking = true; kiErr = ''; render();
   let msg = '';
   try {
-    const r = await fetch(`${KI_API}/models/${KI_MODEL}`, { headers: kiHeaders(key) });
+    const r = await fetch(`${KI_API}/models/${kiModel().id}`, { headers: kiHeaders(key) });
     if (r.status === 401) {
       const j = await r.json().catch(() => null);
       msg = j && j.error && /CORS/i.test(String(j.error.message)) ? 'Dieses API-Konto erlaubt keine Aufrufe aus dem Browser. Mit so einem Konto geht der KI-Spielleiter nicht.'
@@ -1826,13 +1834,13 @@ async function kiCheck() {
 
 /* Eine Antwort bewerten lassen. Liefert { richtig, kommentar } oder wirft, wenn es nicht geklappt hat. */
 async function kiAsk(item) {
-  const ctrl = new AbortController(), stop = setTimeout(() => ctrl.abort(), KI_MS - 3000);
+  const ctrl = new AbortController(), stop = setTimeout(() => ctrl.abort(), KI_MS - 3000), mdl = kiModel();
   const body = {
-    model: KI_MODEL, max_tokens: 16000, system: KI_SYSTEM,
+    model: mdl.id, max_tokens: 16000, system: KI_SYSTEM,
     messages: [{ role: 'user', content: `<kategorie>${item.cat}</kategorie>\n<frage>${item.q}</frage>\n<musterloesung>${item.a}</musterloesung>\n<antwort_des_spielers>${item.x.replace(/[<>]/g, ' ')}</antwort_des_spielers>` }],
-    output_config: { effort: 'low', format: { type: 'json_schema', schema: KI_SCHEMA } },
-    fallbacks: 'default' // lehnt das Modell eine Anfrage ab, lässt Anthropic ein Ersatzmodell antworten
+    output_config: { effort: 'low', format: { type: 'json_schema', schema: KI_SCHEMA } }
   };
+  if (mdl.fb) body.fallbacks = 'default'; // lehnt das Modell eine Anfrage ab, lässt Anthropic ein Ersatzmodell antworten
   try {
     for (let n = 0; n < 4; n++) {
       let r;
@@ -1883,7 +1891,7 @@ function kiFallback() {
   cur.st = 'judge'; cur.dl = Date.now() + JUDGE_MS; cur.kf = 1;
 }
 function kiBoxHTML() {
-  const info = '<p class="hint">Claude vergleicht jede getippte Antwort mit der Musterlösung und entscheidet sofort. Selbstbewertung und Abstimmung entfallen. Der KI-Spielleiter läuft über deinen eigenen Claude-API-Schlüssel von platform.claude.com. Die Kosten trägst du, grob 0,2 bis 1 Cent pro Antwort.</p>';
+  const info = `<p class="hint">Claude vergleicht jede getippte Antwort mit der Musterlösung und entscheidet sofort. Selbstbewertung und Abstimmung entfallen. Der KI-Spielleiter läuft über deinen eigenen Claude-API-Schlüssel von platform.claude.com. Die Kosten trägst du: mit ${kiModel().name} ${kiModel().cost}.</p>`;
   if (kiKey) return `<div class="kibox">${info}
     <p id="ki-ok"><b>Schlüssel bereit:</b> <code>sk-ant-…${esc(kiKey.slice(-4))}</code> ${kiKeep ? '(auf diesem Gerät gemerkt)' : '(bis du diesen Tab schließt)'}</p>
     <button class="btn btn-plain btn-sm" id="ki-clear" data-act="ki-clear">Schlüssel entfernen</button></div>`;
@@ -2060,7 +2068,10 @@ function oHostSettingsHTML() {
         <button id="oki-0" data-act="o-set" data-k="ki" data-v="0" aria-pressed="${!s.ki}">Selbst bewerten und abstimmen</button>
         <button id="oki-1" data-act="o-set" data-k="ki" data-v="1" aria-pressed="${!!s.ki}">KI-Spielleiter</button>
       </div>
-      ${s.ki ? kiBoxHTML() : ''}</div>
+      ${s.ki ? `<span class="opt-label" id="lbl-okm">Modell</span>
+      <div class="seg" role="group" aria-labelledby="lbl-okm">${Object.entries(KI_MODELS).map(([k, m]) => `<button id="okm-${k}" data-act="o-set" data-k="km" data-v="${k}" aria-pressed="${(s.km || 'opus') === k}">${esc(m.name)}</button>`).join('')}</div>
+      <p class="hint" id="okm-note">${esc((KI_MODELS[s.km] || KI_MODELS.opus).note)}</p>
+      ${kiBoxHTML()}` : ''}</div>
     ${catsPanelHTML()}`;
 }
 function oSummaryHTML(v) {
@@ -2071,7 +2082,7 @@ function oSummaryHTML(v) {
       <li>Boards: <b>${s.boards}</b> mit je 25 Fragen</li>
       <li>Zeit zum Antworten: <b>${s.timer} Sekunden</b></li>
       <li>Falsche Antwort nach dem Buzzern: <b>${s.pen ? 'halbe Punkte Abzug' : 'kein Abzug'}</b></li>
-      <li>Wertung der Antworten: <b>${s.ki ? 'KI-Spielleiter' : 'selbst bewerten und abstimmen'}</b></li>
+      <li>Wertung der Antworten: <b>${s.ki ? `KI-Spielleiter (${esc((KI_MODELS[s.km] || KI_MODELS.opus).name)})` : 'selbst bewerten und abstimmen'}</b></li>
     </ul>
     <p class="hint">Die Einstellungen legt der Gastgeber fest.</p>`;
 }
@@ -2363,7 +2374,7 @@ document.addEventListener('click', e => {
     case 'o-discard': confirmBox('Online-Spiel beenden?', 'Das gespeicherte Online-Spiel wird gelöscht.', 'Beenden', () => { savedOnline = null; store.set(K.online, null); render(); }); break;
     case 'o-leave': oLeaveAsk(); break;
     case 'o-leave-ask': closeModal(); oLeaveAsk(); break;
-    case 'o-set': oSet(el.dataset.k, el.dataset.k === 'mode' ? el.dataset.v : Number(el.dataset.v)); break;
+    case 'o-set': oSet(el.dataset.k, el.dataset.k === 'mode' || el.dataset.k === 'km' ? el.dataset.v : Number(el.dataset.v)); break;
     case 'ki-check': kiCheck(); break;
     case 'ki-clear': kiSave('', false); kiErr = ''; render(); break;
     case 'o-team': oAct('team', Number(el.dataset.t)); break;
