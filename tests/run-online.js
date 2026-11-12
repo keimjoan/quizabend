@@ -440,6 +440,61 @@ const MOCK = `(() => {
   const kEmit = await kh.evaluate(() => window.__maxEmit || 0);
   assert(kEmit > 0 && kEmit < 4096, `Spielstand mit KI-Kommentaren bleibt unter 4 KiB (${kEmit} Bytes)`);
 
+  // ---------- [8] Der Gastgeber moderiert: sieht die Lösung, entscheidet per Klick, spielt nicht mit ----------
+  console.log('\n[8] Online, der Gastgeber moderiert');
+  for (const p of [kh, kl]) await p.close();
+  const mh = await newPlayer('mod-host', { width: 1280, height: 800 });
+  await mh.waitForSelector('#me-name'); await mh.fill('#me-name', 'Joan');
+  await mh.click('#o-create'); await mh.waitForSelector('.lobby');
+  const mPlayer = async (tag, name) => {
+    const p = await newPlayer(tag, { width: 1280, height: 800 });
+    await p.waitForSelector('#me-name'); await p.fill('#me-name', name);
+    await p.waitForSelector('[data-act="o-join"]'); await p.click('[data-act="o-join"]');
+    return p;
+  };
+  const ml = await mPlayer('mod-lea', 'Lea'), mm = await mPlayer('mod-max', 'Max');
+  await mh.waitForFunction(() => document.querySelectorAll('.pchip').length === 3, null, { timeout: 5000 });
+  const mState = () => mh.evaluate(() => JSON.parse(localStorage.getItem('quizabend.online.v1')));
+  while ((await mState()).set.boards > 1) await mh.click('#ob-minus');
+  await mh.click('#omod');
+  await mh.waitForSelector('#omod-note');
+  await ml.waitForSelector('text=der Gastgeber moderiert und spielt nicht mit');
+  assert((await mh.textContent('.plist')).includes('Spielleitung'), 'Lobby: Einstellung „Ich moderiere“, Mitspieler sehen sie');
+  await mh.click('#o-start');
+  for (const p of [mh, ml, mm]) await p.waitForSelector('.board', { timeout: 5000 });
+  g = await mState();
+  assert(g.teams.map(t => t.n).join(',') === 'Lea,Max' && g.pl.find(p => p.n === 'Joan').t === null, 'Wer moderiert, spielt nicht mit: ' + g.teams.map(t => t.n).join(', '));
+  assert((await mh.textContent('.mechip')).includes('Du moderierst') && (await mh.$('button.tile')) === null, 'Spielleitung kann keine Frage wählen');
+
+  // Lea antwortet falsch (−50, halbe Punkte der 100er-Frage), Max buzzert und liegt richtig (+100)
+  await ml.click('#tile-0-0');
+  await mh.waitForSelector('#o-mod-sol');
+  const mSol = (await mState()).boards[0].cats[0].qs[0].a;
+  assert((await mh.textContent('#o-mod-sol .val')) === mSol, 'Spielleitung sieht die Lösung schon beim Antworten');
+  await ml.waitForSelector('#o-ans-in');
+  assert(await ml.isVisible('text=Danach entscheidet die Spielleitung'), 'Hinweis für den Antwortenden passt');
+  await ml.fill('#o-ans-in', 'Irgendwas'); await ml.press('#o-ans-in', 'Enter');
+  await mh.waitForSelector('#o-mod-yes');
+  await mm.waitForSelector('#o-mod-wait');
+  assert(!(await ml.isVisible('.answer')) && !(await mm.isVisible('.answer')) && !(await ml.isVisible('#o-claim-yes')), 'Spieler sehen die Lösung nicht und bewerten nicht selbst');
+  await mh.screenshot({ path: `${SHOTS}/60-mod-judge.png` });
+  await mh.click('#o-mod-no');
+  await mm.waitForSelector('#o-buzz');
+  assert(!(await mh.isVisible('#o-buzz')) && await mh.isVisible('#o-mod-sol'), 'Spielleitung buzzert nicht und sieht weiter die Lösung');
+  await mm.click('#o-buzz');
+  await mm.waitForSelector('#o-ans-in'); await mm.fill('#o-ans-in', mSol); await mm.press('#o-ans-in', 'Enter');
+  await mh.waitForSelector('#o-mod-yes'); await mh.click('#o-mod-yes');
+  await ml.waitForSelector('#o-next');
+  g = await mState();
+  assert(JSON.stringify(g.sc) === '[-50,100]' && g.cur.win === 1, 'Moderiert: Lea −50 (halbe Punkte), Max +100: ' + g.sc);
+  const mRes = await ml.$$eval('.verdict .res', els => els.map(e => e.textContent).join(','));
+  assert(mRes === 'falsch,richtig', 'Auflösung zeigt das Urteil der Spielleitung: ' + mRes);
+  await ml.screenshot({ path: `${SHOTS}/61-mod-resolved.png` });
+  await ml.click('#o-next');
+  await mm.waitForSelector('button.tile');
+  g = await mState();
+  assert(g.turn === 1, 'Danach ist Max dran');
+
   await browser.close();
   server.close();
   console.log('\nFehler im Browser:', errors.length ? '\n' + errors.join('\n') : 'keine');

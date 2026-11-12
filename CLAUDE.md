@@ -32,7 +32,9 @@ Ein Punkte-Quiz im Browser zum Spielen mit Freunden: Boards mit 5 Kategorien × 
   2. Nur der Fragewähler (bei Teams sein Team) sieht danach die Musterlösung und wertet sich selbst (30 Sekunden, sonst falsch).
   3. Sagt er „richtig“: Alle anderen sehen Antwort und Lösung und stimmen ab. Mindestens 50 Prozent dafür ergibt die Punkte, sonst werden die vollen Punkte abgezogen. Danach ist die Frage vorbei. Stimmt niemand ab, zählt die Antwort.
   4. Sagt er „falsch“: halbe Punkte Abzug. Dann dürfen die anderen buzzern (20 Sekunden), jedes Team nur einmal pro Frage, der Fragewähler gar nicht. Wer zuerst buzzert, antwortet und wertet sich genauso selbst.
-- KI-Spielleiter (Einstellung „Wertung der Antworten“ in der Lobby, Standard ist aus): Statt Schritt 2 bis 4 prüft Claude die getippte Antwort gegen die Musterlösung. Richtig: volle Punkte, die Frage ist vorbei, ohne Abstimmung. Falsch: halbe Punkte Abzug, dann buzzern die anderen wie in Schritt 4, und auch die Buzzer-Antwort prüft die KI. Den Kommentar der KI sehen alle erst nach der Auflösung. Antwortet die KI nicht (Ausfall, abgelehnter Schlüssel, 25 Sekunden), läuft diese eine Antwort nach den normalen Regeln.
+- Einstellung „Wertung der Antworten“ in der Lobby, drei Möglichkeiten: „Selbst bewerten und abstimmen“ (Standard, Ablauf oben), „Ich moderiere“ und „KI-Spielleiter“ (`g.set.mod` und `g.set.ki`, höchstens eins davon an).
+- Gastgeber moderiert: Der Gastgeber ist Spielleitung und spielt nicht mit (kein Team, `p.t` ist `null`, kann keine Frage wählen und nicht buzzern). Er sieht bei jeder Frage die Lösung, nur in seiner eigenen Ansicht (`oView(true)`), nie im verschickten Spielstand. Nach jeder Antwort entscheidet er per Klick (Zustand `mod`, Eingabe `mod`, nur vom Gastgeber angenommen): Richtig gibt die vollen Punkte und beendet die Frage, falsch kostet die Hälfte wie in Schritt 4, dann buzzern die anderen. Keine Zeitgrenze für die Entscheidung.
+- KI-Spielleiter: Statt Schritt 2 bis 4 prüft Claude die getippte Antwort gegen die Musterlösung. Richtig: volle Punkte, die Frage ist vorbei, ohne Abstimmung. Falsch: halbe Punkte Abzug, dann buzzern die anderen wie in Schritt 4, und auch die Buzzer-Antwort prüft die KI. Den Kommentar der KI sehen alle erst nach der Auflösung. Antwortet die KI nicht (Ausfall, abgelehnter Schlüssel, 25 Sekunden), läuft diese eine Antwort nach den normalen Regeln.
 
 ## Verbindung: Raum von Claude oder eigener Raum-Server
 
@@ -67,7 +69,7 @@ npm test
 ```
 
 - `npm run test:local`: Spiel an einem Bildschirm, eigene Fragen, sechs Teams, Handy als Spielleitung.
-- `npm run test:online`: Gastgeber und zwei Spieler in getrennten Browsern, jeder für sich und in Teams, über den nachgebauten Raum (`MOCK`). Danach ein Spiel mit KI-Spielleiter gegen eine nachgestellte Claude-API.
+- `npm run test:online`: Gastgeber und zwei Spieler in getrennten Browsern, jeder für sich und in Teams, über den nachgebauten Raum (`MOCK`). Danach ein Spiel mit KI-Spielleiter gegen eine nachgestellte Claude-API und ein Spiel, das der Gastgeber moderiert.
 - `npm run test:server`: derselbe Online-Test über den echten Raum-Server. Vorher im Ordner `server` `npm run dev` starten (http://127.0.0.1:8787). Nach Änderungen an `webRoom()` oder `server/` laufen lassen.
 - Bildschirmfotos landen in `shots/`. Nach jeder Änderung an Spielregeln oder Punkten beide Tests laufen lassen.
 

@@ -703,7 +703,7 @@ let savedOnline = null;
 function defaultPrefs() {
   return {
     teams: [{ name: '', color: 0, key: 'a' }, { name: '', color: 1, key: 'l' }], boards: 2, timer: 0, penalty: true, sound: true, off: [],
-    tab: HAS_ROOM ? 'online' : 'local', oset: { mode: 'solo', nt: 2, tn: ['', '', '', '', '', ''], timer: 60, pen: true, ki: false, km: 'opus' }
+    tab: HAS_ROOM ? 'online' : 'local', oset: { mode: 'solo', nt: 2, tn: ['', '', '', '', '', ''], timer: 60, pen: true, ki: false, km: 'opus', mod: false }
   };
 }
 function loadPrefs() {
@@ -729,7 +729,8 @@ function loadPrefs() {
       timer: [30, 60, 90].includes(os.timer) ? os.timer : 60,
       pen: os.pen !== false,
       ki: os.ki === true,
-      km: os.km === 'haiku' ? 'haiku' : 'opus'
+      km: os.km === 'haiku' ? 'haiku' : 'opus',
+      mod: os.mod === true && os.ki !== true
     }
   };
 }
@@ -1092,7 +1093,7 @@ function onlineStartHTML() {
         <li>Sagt er „richtig“, sehen alle Antwort und Lösung und stimmen ab. Bei mindestens 50 Prozent dafür gibt es die Punkte, sonst werden die vollen Punkte abgezogen.</li>
         <li>Sagt er „falsch“, verliert er die Hälfte. Dann dürfen die anderen buzzern, jeder einmal. Wer zuerst drückt, antwortet und prüft sich genauso selbst.</li>
       </ol>
-      <p class="hint">Der Gastgeber kann in der Lobby einen KI-Spielleiter einschalten. Dann prüft Claude die Antworten, Selbstbewertung und Abstimmung entfallen. Dafür braucht der Gastgeber einen eigenen Claude-API-Schlüssel.</p>
+      <p class="hint">Der Gastgeber kann in der Lobby auch selbst moderieren: Dann sieht er die Lösungen, entscheidet über jede Antwort und spielt nicht mit. Oder er schaltet einen KI-Spielleiter ein. Dann prüft Claude die Antworten, Selbstbewertung und Abstimmung entfallen. Dafür braucht der Gastgeber einen eigenen Claude-API-Schlüssel.</p>
       <p class="hint">${inviteHTML()}</p>
     </section>
   </div>`;
@@ -1502,7 +1503,7 @@ function oCreate() {
   Object.assign(on, { role: 'host', gid: 'g' + rid(10), view: null, draft: '', sent: '', myVote: null, myCounter: null, err: '', stale: false });
   on.og = {
     id: on.gid, host: me.pid, v: 0, ph: 'lobby',
-    set: { mode: s.mode, nt: s.nt, tn: s.tn.slice(0, 6), boards: prefs.boards, timer: s.timer, pen: s.pen, ki: !!s.ki, km: s.km === 'haiku' ? 'haiku' : 'opus' },
+    set: { mode: s.mode, nt: s.nt, tn: s.tn.slice(0, 6), boards: prefs.boards, timer: s.timer, pen: s.pen, ki: !!s.ki, km: s.km === 'haiku' ? 'haiku' : 'opus', mod: !!s.mod && !s.ki },
     pl: [{ id: me.pid, n: name, slot: null, t: null, on: true, offAt: null }],
     teams: [], boards: [], sc: [], bi: 0, turn: 0, res: [], qn: 0, cur: null
   };
@@ -1525,17 +1526,17 @@ function oBump() {
   g.v++;
   store.set(K.online, g);
   const prev = on.view;
-  on.view = oView(); on.at = Date.now();
+  on.view = oView(true); on.at = Date.now();
   oPrepareFlip(prev, on.view);
   oSounds(prev, on.view);
   render(); oBroadcast(); updatePresence();
 }
-function oView() {
+function oView(local) {
   const g = on.og;
   const sel = selectedCats();
   const v = {
     id: g.id, ver: g.v, ph: g.ph, host: g.host, qn: g.qn,
-    set: { mode: g.set.mode, nt: g.set.nt, tn: g.set.tn.slice(0, g.set.nt), boards: g.set.boards, timer: g.set.timer, pen: g.set.pen, ki: g.set.ki ? 1 : 0, km: g.set.km === 'haiku' ? 'haiku' : 'opus', nc: sel.length },
+    set: { mode: g.set.mode, nt: g.set.nt, tn: g.set.tn.slice(0, g.set.nt), boards: g.set.boards, timer: g.set.timer, pen: g.set.pen, ki: g.set.ki ? 1 : 0, mod: g.set.mod ? 1 : 0, km: g.set.km === 'haiku' ? 'haiku' : 'opus', nc: sel.length },
     pl: g.pl.map(p => [p.id, p.n, g.ph === 'lobby' ? p.slot : p.t, p.on ? 1 : 0])
   };
   if (g.ph !== 'lobby' && g.boards.length) {
@@ -1556,6 +1557,7 @@ function oView() {
       };
       if (c.st === 'judge' || c.st === 'vote' || c.st === 'resolved') v.cur.a = q.a;
       if (c.kf && c.st === 'judge') v.cur.kf = 1;
+      if (local && g.set.mod) v.cur.a = q.a;
     }
   }
   return v;
@@ -1585,7 +1587,8 @@ function oSubmit(pid, text) {
   const cur = on.og.cur;
   cur.ans.push({ t: cur.at, p: pid, x: text, cl: null, v: null, y: 0, n: 0 });
   cur.vi = cur.ans.length - 1; cur.kf = 0;
-  if (on.og.set.ki && kiKey) { cur.st = 'ki'; cur.dl = Date.now() + KI_MS; kiStart(); }
+  if (on.og.set.mod) { cur.st = 'mod'; cur.dl = null; }
+  else if (on.og.set.ki && kiKey) { cur.st = 'ki'; cur.dl = Date.now() + KI_MS; kiStart(); }
   else { cur.st = 'judge'; cur.dl = Date.now() + JUDGE_MS; if (on.og.set.ki) cur.kf = 1; }
 }
 function oNoAnswer(pid) {
@@ -1671,6 +1674,11 @@ function oInput(pid, inp) {
       if (an.skip === true) oNoAnswer(pid);
       else { const text = cleanAnswer(an.t); if (text) oSubmit(pid, text); }
     }
+    const md = inp.mod;
+    if (md && pid === g.host && g.set.mod && cur.st === 'mod' && md.q === cur.qn && md.i === cur.vi && typeof md.ok === 'boolean') {
+      const a = cur.ans[cur.vi];
+      if (md.ok) { a.cl = true; a.v = true; g.sc[a.t] += cur.v; cur.log.push([a.t, cur.v]); oResolve(a.t); } else oWrong();
+    }
     const cl = inp.claim;
     if (cl && cur.st === 'judge' && cl.q === cur.qn && cl.i === cur.vi && typeof cl.ok === 'boolean' && team === cur.ans[cur.vi].t) oClaim(cl.ok);
     const bz = inp.buzz;
@@ -1730,10 +1738,10 @@ function oSet(k, val) {
   else if (k === 'boards') { const maxB = Math.max(1, Math.floor(selectedCats().length / 5)); s.boards = clamp(clamp(s.boards, 1, maxB) + val, 1, maxB); prefs.boards = s.boards; }
   else if (k === 'timer') s.timer = [30, 60, 90].includes(val) ? val : 60;
   else if (k === 'pen') s.pen = !!val;
-  else if (k === 'ki') s.ki = !!val;
+  else if (k === 'wert') { s.ki = val === 'ki'; s.mod = val === 'mod'; }
   else if (k === 'km') { s.km = val === 'haiku' ? 'haiku' : 'opus'; kiErr = ''; }
   g.pl.forEach(p => { if (p.slot != null && p.slot >= s.nt) p.slot = null; });
-  prefs.oset = { mode: s.mode, nt: s.nt, tn: s.tn.slice(0, 6), timer: s.timer, pen: s.pen, ki: !!s.ki, km: s.km === 'haiku' ? 'haiku' : 'opus' }; savePrefs();
+  prefs.oset = { mode: s.mode, nt: s.nt, tn: s.tn.slice(0, 6), timer: s.timer, pen: s.pen, ki: !!s.ki, km: s.km === 'haiku' ? 'haiku' : 'opus', mod: !!s.mod }; savePrefs();
   oBump();
 }
 function oStartGame() {
@@ -1742,21 +1750,24 @@ function oStartGame() {
   if (maxB < 1) { toast('Wähle mindestens fünf Kategorien aus.'); return; }
   if (g.pl.length < 2) { toast('Es braucht mindestens zwei Spieler.'); return; }
   if (g.set.ki && !kiKey) { toast('Trage zuerst deinen API-Schlüssel ein oder wähle „Selbst bewerten und abstimmen“.'); return; }
+  const plays = p => !(g.set.mod && p.id === g.host);
   let teams;
   if (g.set.mode === 'solo') {
-    teams = g.pl.map((p, i) => ({ n: p.n, c: OCOLORS[i % OCOLORS.length] }));
-    g.pl.forEach((p, i) => { p.t = i; });
+    const players = g.pl.filter(plays);
+    teams = players.map(p => ({ n: p.n, c: OCOLORS[g.pl.indexOf(p) % OCOLORS.length] }));
+    g.pl.forEach(p => { p.t = plays(p) ? players.indexOf(p) : null; });
   } else {
     for (const p of g.pl) {
+      if (!plays(p)) { p.slot = null; continue; }
       if (p.slot == null || p.slot >= g.set.nt) {
         const counts = Array.from({ length: g.set.nt }, (_, i) => g.pl.filter(x => x.slot === i).length);
         p.slot = counts.indexOf(Math.min(...counts));
       }
     }
-    const used = Array.from({ length: g.set.nt }, (_, i) => i).filter(i => g.pl.some(p => p.slot === i));
+    const used = Array.from({ length: g.set.nt }, (_, i) => i).filter(i => g.pl.some(p => plays(p) && p.slot === i));
     if (used.length < 2) { toast('Mindestens zwei Teams brauchen Spieler.'); oBump(); return; }
     teams = used.map(i => ({ n: oTeamName(i), c: COLORS[i].hex }));
-    g.pl.forEach(p => { p.t = used.indexOf(p.slot); });
+    g.pl.forEach(p => { p.t = plays(p) ? used.indexOf(p.slot) : null; });
   }
   const nB = clamp(g.set.boards, 1, maxB);
   const chosen = pickCats(sel, nB * 5);
@@ -2000,19 +2011,21 @@ function oLobbyHTML(v) {
   const isHost = on.role === 'host', s = v.set, pl = v.pl || [];
   const myP = pl.find(p => p[0] === me.pid), hostP = pl.find(p => p[0] === v.host);
   const tname = i => (s.tn && s.tn[i] || '').trim() || `Team ${COLORS[i].name}`;
+  const modP = s.mod ? hostP : null, plays = p => !modP || p[0] !== modP[0];
   const chip = p => `<span class="member${p[0] === me.pid ? ' me' : ''}${p[3] ? '' : ' off'}">${esc(p[1])}${p[0] === me.pid ? ' (du)' : ''}</span>`;
   let players;
   if (s.mode === 'teams') {
-    const free = pl.filter(p => p[2] == null || p[2] >= s.nt);
+    const free = pl.filter(p => plays(p) && (p[2] == null || p[2] >= s.nt));
     players = `<div class="teamcols">${Array.from({ length: s.nt }, (_, i) => {
-      const mem = pl.filter(p => p[2] === i), mine = myP && myP[2] === i;
+      const mem = pl.filter(p => plays(p) && p[2] === i), mine = myP && myP[2] === i;
       return `<div class="teamcol" style="--c:${COLORS[i].hex}"><h3><span class="lamp"></span>${esc(tname(i))}</h3>
         <div class="members">${mem.map(chip).join('') || '<span class="hint">Noch leer</span>'}</div>
-        ${myP ? `<button class="btn btn-plain btn-sm" id="ot-join-${i}" data-act="o-team" data-t="${i}" ${mine ? 'disabled' : ''}>${mine ? 'Dein Team' : 'Diesem Team beitreten'}</button>` : ''}</div>`;
+        ${myP && plays(myP) ? `<button class="btn btn-plain btn-sm" id="ot-join-${i}" data-act="o-team" data-t="${i}" ${mine ? 'disabled' : ''}>${mine ? 'Dein Team' : 'Diesem Team beitreten'}</button>` : ''}</div>`;
     }).join('')}</div>
-    ${free.length ? `<p class="hint">Noch ohne Team: ${esc(joinDe(free.map(p => p[1])))}. Wer beim Start kein Team hat, wird automatisch verteilt.</p>` : ''}`;
+    ${free.length ? `<p class="hint">Noch ohne Team: ${esc(joinDe(free.map(p => p[1])))}. Wer beim Start kein Team hat, wird automatisch verteilt.</p>` : ''}
+    ${modP ? `<p class="hint">${esc(modP[1])} moderiert und spielt nicht mit.</p>` : ''}`;
   } else {
-    players = `<div class="plist">${pl.map((p, i) => `<div class="pchip${p[3] ? '' : ' off'}"><span class="lamp" style="--c:${OCOLORS[i % OCOLORS.length]}"></span><span class="nm">${esc(p[1])}${p[0] === me.pid ? ' (du)' : ''}</span>${p[0] === v.host ? '<span class="tag">Gastgeber</span>' : ''}${p[3] ? '' : '<span class="hint">nicht verbunden</span>'}</div>`).join('')}</div>`;
+    players = `<div class="plist">${pl.map((p, i) => `<div class="pchip${p[3] ? '' : ' off'}"><span class="lamp" style="--c:${OCOLORS[i % OCOLORS.length]}"></span><span class="nm">${esc(p[1])}${p[0] === me.pid ? ' (du)' : ''}</span>${p[0] === v.host ? `<span class="tag">${s.mod ? 'Spielleitung' : 'Gastgeber'}</span>` : ''}${p[3] ? '' : '<span class="hint">nicht verbunden</span>'}</div>`).join('')}</div>`;
   }
   const maxB = Math.max(1, Math.floor((s.nc || 0) / 5)), boards = clamp(s.boards, 1, maxB);
   const enough = pl.length >= 2 && s.nc >= 5;
@@ -2065,9 +2078,11 @@ function oHostSettingsHTML() {
       </div></div>
     <div class="opt"><span class="opt-label" id="lbl-oki">Wertung der Antworten</span>
       <div class="seg" role="group" aria-labelledby="lbl-oki">
-        <button id="oki-0" data-act="o-set" data-k="ki" data-v="0" aria-pressed="${!s.ki}">Selbst bewerten und abstimmen</button>
-        <button id="oki-1" data-act="o-set" data-k="ki" data-v="1" aria-pressed="${!!s.ki}">KI-Spielleiter</button>
+        <button id="oki-0" data-act="o-set" data-k="wert" data-v="vote" aria-pressed="${!s.ki && !s.mod}">Selbst bewerten und abstimmen</button>
+        <button id="omod" data-act="o-set" data-k="wert" data-v="mod" aria-pressed="${!!s.mod}">Ich moderiere</button>
+        <button id="oki-1" data-act="o-set" data-k="wert" data-v="ki" aria-pressed="${!!s.ki}">KI-Spielleiter</button>
       </div>
+      ${s.mod ? '<p class="hint" id="omod-note">Du bist die Spielleitung: Du siehst bei jeder Frage die Lösung und entscheidest per Klick, ob eine Antwort zählt. Dafür spielst du selbst nicht mit.</p>' : ''}
       ${s.ki ? `<span class="opt-label" id="lbl-okm">Modell</span>
       <div class="seg" role="group" aria-labelledby="lbl-okm">${Object.entries(KI_MODELS).map(([k, m]) => `<button id="okm-${k}" data-act="o-set" data-k="km" data-v="${k}" aria-pressed="${(s.km || 'opus') === k}">${esc(m.name)}</button>`).join('')}</div>
       <p class="hint" id="okm-note">${esc((KI_MODELS[s.km] || KI_MODELS.opus).note)}</p>
@@ -2082,7 +2097,7 @@ function oSummaryHTML(v) {
       <li>Boards: <b>${s.boards}</b> mit je 25 Fragen</li>
       <li>Zeit zum Antworten: <b>${s.timer} Sekunden</b></li>
       <li>Falsche Antwort nach dem Buzzern: <b>${s.pen ? 'halbe Punkte Abzug' : 'kein Abzug'}</b></li>
-      <li>Wertung der Antworten: <b>${s.ki ? `KI-Spielleiter (${esc((KI_MODELS[s.km] || KI_MODELS.opus).name)})` : 'selbst bewerten und abstimmen'}</b></li>
+      <li>Wertung der Antworten: <b>${s.ki ? `KI-Spielleiter (${esc((KI_MODELS[s.km] || KI_MODELS.opus).name)})` : s.mod ? 'der Gastgeber moderiert und spielt nicht mit' : 'selbst bewerten und abstimmen'}</b></li>
     </ul>
     <p class="hint">Die Einstellungen legt der Gastgeber fest.</p>`;
 }
@@ -2092,7 +2107,7 @@ function oGameHTML(v, myT) {
   const c = v.cur;
   let turnC = T(v.turn).c;
   if (v.ph === 'question' && c) {
-    const t = c.st === 'answer' ? c.at : (c.st === 'judge' || c.st === 'vote' || c.st === 'ki') && c.ans && c.ans[c.vi] ? c.ans[c.vi][0] : (c.st === 'resolved' && c.win >= 0 ? c.win : null);
+    const t = c.st === 'answer' ? c.at : (c.st === 'judge' || c.st === 'vote' || c.st === 'ki' || c.st === 'mod') && c.ans && c.ans[c.vi] ? c.ans[c.vi][0] : (c.st === 'resolved' && c.win >= 0 ? c.win : null);
     turnC = t != null ? T(t).c : 'var(--brass)';
   }
   if (v.ph === 'gameEnd') turnC = 'var(--brass)';
@@ -2109,7 +2124,7 @@ function oTopbarHTML(v, myT, T) {
   }
   const meC = myT != null && v.teams ? T(myT).c : 'var(--ink-dim)';
   return `<header class="topbar"><span class="brand">Quizabend</span><div class="meta">${meta}</div>${pill}
-    <div class="tools"><span class="mechip" style="--c:${meC}"><span class="lamp"></span>Du spielst als <b>${esc(me.name)}</b></span>${soundBtn()}${fullBtn()}
+    <div class="tools"><span class="mechip" style="--c:${meC}"><span class="lamp"></span>${v.set.mod && on.role === 'host' ? 'Du moderierst' : `Du spielst als <b>${esc(me.name)}</b>`}</span>${soundBtn()}${fullBtn()}
     <button class="icon-btn" id="t-menu" data-act="o-menu" aria-label="Menü" title="Menü">${icon('menu')}</button></div>
     ${on.stale ? '<div class="banner warn conn"><p>Keine Verbindung zum Gastgeber. Wenn das so bleibt, wurde das Spiel vermutlich beendet.</p><button class="btn btn-plain btn-sm" data-act="o-leave">Zur Startseite</button></div>' : ''}
   </header>`;
@@ -2137,6 +2152,8 @@ function oQuestionHTML(v, myT, T) {
   const wrongs = ans.filter(a => a[2] === 0);
   const wrongHTML = wrongs.length ? `<div class="verdicts">${wrongs.map(a => `<div class="verdict"><span class="lamp" style="--c:${T(a[0]).c}"></span><span class="who">${by(a)}</span><span class="what">${a[1] ? '„' + esc(a[1]) + '“' : 'keine Antwort'}</span><span class="res no">falsch</span></div>`).join('')}</div>` : '';
   const sending = '<p class="buzzhint">Wird übermittelt …</p>';
+  const isMod = !!v.set.mod && on.role === 'host';
+  const modSol = isMod && c.a ? `<div class="answer" id="o-mod-sol"><span class="lbl">Lösung, nur für dich</span><span class="val">${esc(c.a)}</span></div>` : '';
   let who = '', body = `<p class="qtext">${esc(c.q)}</p>`, foot = '';
   if (c.st === 'answer') {
     const at = T(c.at), mine = myT === c.at, isBuzz = c.at !== v.turn;
@@ -2148,9 +2165,18 @@ function oQuestionHTML(v, myT, T) {
           <input class="text-in" id="o-ans-in" data-input="o-draft" maxlength="80" autocomplete="off" spellcheck="false" placeholder="${teams ? 'Eure Antwort' : 'Deine Antwort'}" value="${esc(on.draft)}">
           <button class="btn btn-brass btn-lg" id="o-submit" type="submit">Antwort abschicken</button>
           <button class="btn btn-plain btn-lg" id="o-skip" type="button" data-act="o-skip">Weiß ich nicht</button></form>
-          <p class="hint">${v.set.ki ? 'Danach prüft der KI-Spielleiter die Antwort.' : `Danach ${teams ? 'seht nur ihr' : 'siehst nur du'} die Musterlösung und ${teams ? 'entscheidet' : 'entscheidest'} selbst, ob die Antwort richtig war.`}</p>`;
-    } else body += `<p class="lead">${esc(at.n)} ${isBuzz ? 'hat gebuzzert und tippt' : 'tippt'} gerade die Antwort ein.${!isBuzz && myT !== v.turn ? ' Liegt sie falsch, darfst du danach buzzern.' : ''}</p>`;
+          <p class="hint">${v.set.mod ? 'Danach entscheidet die Spielleitung, ob die Antwort zählt.' : v.set.ki ? 'Danach prüft der KI-Spielleiter die Antwort.' : `Danach ${teams ? 'seht nur ihr' : 'siehst nur du'} die Musterlösung und ${teams ? 'entscheidet' : 'entscheidest'} selbst, ob die Antwort richtig war.`}</p>`;
+    } else body += `${modSol}<p class="lead">${esc(at.n)} ${isBuzz ? 'hat gebuzzert und tippt' : 'tippt'} gerade die Antwort ein.${!isBuzz && !isMod && myT !== v.turn ? ' Liegt sie falsch, darfst du danach buzzern.' : ''}</p>`;
     body += timer;
+  } else if (c.st === 'mod') {
+    const a = ans[c.vi] || [c.at, '', null, null, 0, 0, null], at = T(a[0]);
+    who = pill(at, 'Die Spielleitung prüft');
+    body += `${wrongHTML}${modSol}<div class="said"><span class="saidby">${by(a)} hat geantwortet</span><span class="quote">„${esc(a[1])}“</span></div>`;
+    if (isMod) body += on.sent === `m${qn}-${c.vi}` ? sending
+      : `<p class="buzzhint">Zählt die Antwort?</p>
+        <div class="votebtns"><button class="btn btn-good btn-lg" id="o-mod-yes" data-act="o-mod" data-ok="1">${icon('check')} Richtig <span class="pts">+${c.v}</span></button>
+        <button class="btn btn-bad btn-lg" id="o-mod-no" data-act="o-mod" data-ok="0">${icon('x')} Falsch <span class="pts">−${a[0] === v.turn || v.set.pen ? half : 0}</span></button></div>`;
+    else body += '<p class="lead" id="o-mod-wait">Die Spielleitung vergleicht die Antwort mit der Lösung.</p>';
   } else if (c.st === 'ki') {
     const a = ans[c.vi] || [c.at, '', null, null, 0, 0, null], at = T(a[0]);
     who = pill(at, 'Der KI-Spielleiter prüft');
@@ -2174,7 +2200,8 @@ function oQuestionHTML(v, myT, T) {
     who = '<span class="turnpill"><span class="lamp"></span>Buzzer frei</span>';
     body += wrongHTML;
     const done = (c.att || []).includes(myT), passed = (c.pas || []).includes(myT);
-    if (myT === v.turn) body += `<p class="buzzhint">Jetzt dürfen die anderen buzzern.</p>`;
+    if (isMod) body += `${modSol}<p class="buzzhint">Jetzt dürfen die Spieler buzzern.</p>`;
+    else if (myT === v.turn) body += `<p class="buzzhint">Jetzt dürfen die anderen buzzern.</p>`;
     else if (done) body += `<p class="lead">${teams ? 'Ihr habt' : 'Du hast'} bei dieser Frage schon gebuzzert.</p>`;
     else if (passed) body += `<p class="lead">${teams ? 'Ihr habt' : 'Du hast'} gepasst.</p>`;
     else if (on.sent === `b${qn}-${c.br}` || on.sent === `p${qn}-${c.br}`) body += sending;
@@ -2197,7 +2224,7 @@ function oQuestionHTML(v, myT, T) {
     body += `${solution}<div class="verdicts">${ans.map(a => {
       const votes = (a[4] + a[5]) ? `, ${a[4]} zu ${a[5]} Stimmen` : '';
       const byKi = a[7] != null;
-      const res = byKi ? (a[3] === 1 ? ['ok', 'richtig'] : ['no', 'falsch']) : a[3] === 1 ? ['ok', `zählt${votes}`] : a[2] === 0 ? ['no', a[1] ? 'selbst als falsch gewertet' : 'falsch'] : ['no', `abgelehnt${votes}`];
+      const res = byKi || v.set.mod ? (a[3] === 1 ? ['ok', 'richtig'] : ['no', 'falsch']) : a[3] === 1 ? ['ok', `zählt${votes}`] : a[2] === 0 ? ['no', a[1] ? 'selbst als falsch gewertet' : 'falsch'] : ['no', `abgelehnt${votes}`];
       return `<div class="verdict"><span class="lamp" style="--c:${T(a[0]).c}"></span><span class="who">${by(a)}</span><span class="what">${a[1] ? '„' + esc(a[1]) + '“' : 'keine Antwort'}</span><span class="res ${res[0]}">${res[1]}</span>${byKi && a[7] ? `<span class="kinote">KI-Spielleiter: ${esc(a[7])}</span>` : ''}</div>`;
     }).join('') || '<p class="hint">Niemand hat geantwortet.</p>'}</div>`;
     foot = `<p class="result">${c.win >= 0 ? `<b>${esc(T(c.win).n)}</b> holt ${c.v} Punkte.` : 'Diesmal hat niemand die Punkte geholt.'}</p><span class="spacer"></span>
@@ -2374,7 +2401,8 @@ document.addEventListener('click', e => {
     case 'o-discard': confirmBox('Online-Spiel beenden?', 'Das gespeicherte Online-Spiel wird gelöscht.', 'Beenden', () => { savedOnline = null; store.set(K.online, null); render(); }); break;
     case 'o-leave': oLeaveAsk(); break;
     case 'o-leave-ask': closeModal(); oLeaveAsk(); break;
-    case 'o-set': oSet(el.dataset.k, el.dataset.k === 'mode' || el.dataset.k === 'km' ? el.dataset.v : Number(el.dataset.v)); break;
+    case 'o-set': oSet(el.dataset.k, ['mode', 'km', 'wert'].includes(el.dataset.k) ? el.dataset.v : Number(el.dataset.v)); break;
+    case 'o-mod': { const c = on.view && on.view.cur; if (!c) break; on.sent = `m${c.qn}-${c.vi}`; oAct('mod', { q: c.qn, i: c.vi, ok: el.dataset.ok === '1' }); break; }
     case 'ki-check': kiCheck(); break;
     case 'ki-clear': kiSave('', false); kiErr = ''; render(); break;
     case 'o-team': oAct('team', Number(el.dataset.t)); break;
