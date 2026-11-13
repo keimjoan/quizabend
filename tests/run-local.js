@@ -268,7 +268,8 @@ const MOCK_ROOM = `(() => {
   await help.goto(BASE.replace(/index\.html$/, 'boards.html'));
   const links = await help.$$eval('a[download]', els => els.map(a => a.href));
   const codes = await Promise.all(links.map(u => help.request.get(u).then(r => r.status())));
-  assert(links.length >= 5 && codes.every(c => c === 200), `Anleitungsseite: ${links.length} Downloads erreichbar`);
+  assert(links.length >= 4 && codes.every(c => c === 200), `Anleitungsseite: ${links.length} Downloads erreichbar`);
+  assert(/^https:\/\/docs\.google\.com\/spreadsheets\/d\/[\w-]+\/copy$/.test(await help.getAttribute('#sheets-copy', 'href')), 'Google-Sheets-Vorlage zum Kopieren verlinkt');
   await help.screenshot({ path: `${SHOTS}/09c-boards-page.png`, fullPage: true });
   await help.close();
   await ctx.close();
