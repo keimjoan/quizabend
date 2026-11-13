@@ -2252,7 +2252,7 @@ function kiBoxHTML() {
    Verbinden. Ohne TURN-Server klappt es in manchen Netzen nicht, dann steht „Keine Verbindung“ auf dem Bild. */
 const RTC_ICE = Array.isArray(window.QUIZ_ICE) ? window.QUIZ_ICE : [{ urls: ['stun:stun.cloudflare.com:3478', 'stun:stun.l.google.com:19302'] }];
 const CAM_OK = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.RTCPeerConnection);
-const CAM_BITRATE = 200000;
+const CAM_BITRATE = 200000, CAM_WIDTH = 320, CAM_FPS = 15;
 const cam = { stream: null, busy: false, pcs: new Map(), err: '' };
 let camEl = null;
 
@@ -2279,8 +2279,10 @@ async function camToggle() {
     render(); return;
   }
   cam.busy = true; cam.err = ''; render();
-  // Erst kleine Bilder, sonst die einfachste Anfrage, die jede Kamera erfüllt. Gesperrt bleibt gesperrt.
-  const asks = [{ audio: false, video: { width: { ideal: 320 }, height: { ideal: 240 }, frameRate: { ideal: 15 }, facingMode: 'user' } }, { audio: false, video: true }];
+  // Die Kamera in ihrer Grundeinstellung öffnen, verkleinert wird erst beim Senden (camLimit).
+  // Wünsche nach kleiner Auflösung oder wenig Bildern lassen manche Kameras in Chrome hängen
+  // (Logitech StreamCam: „Timeout starting video source“ nach 10 Sekunden). Gesperrt bleibt gesperrt.
+  const asks = [{ audio: false, video: { facingMode: 'user' } }, { audio: false, video: true }];
   let err = null;
   for (const a of asks) {
     try { cam.stream = await navigator.mediaDevices.getUserMedia(a); err = null; break; }
@@ -2316,8 +2318,11 @@ function camLimit(pc) {
     try {
       const p = s.getParameters();
       if (!p.encodings || !p.encodings.length) continue;
-      if (p.encodings[0].maxBitrate === CAM_BITRATE) continue;
-      p.encodings[0].maxBitrate = CAM_BITRATE;
+      const e = p.encodings[0], w = Number(s.track.getSettings().width) || CAM_WIDTH;
+      const scale = Math.max(1, Math.round(w / CAM_WIDTH * 100) / 100);
+      if (e.maxBitrate === CAM_BITRATE && e.scaleResolutionDownBy === scale) continue;
+      // Klein verschicken, egal wie groß die Kamera filmt
+      Object.assign(e, { maxBitrate: CAM_BITRATE, scaleResolutionDownBy: scale, maxFramerate: CAM_FPS });
       s.setParameters(p).catch(() => {});
     } catch (e) { /* egal */ }
   }

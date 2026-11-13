@@ -561,6 +561,8 @@ const MOCK = `(() => {
   await cm.waitForTimeout(1200);
   const t1 = await cm.evaluate(() => [...document.querySelectorAll('#cam-slot video')].map(v => v.currentTime));
   assert(t1.every((t, i) => t > t0[i]), 'Auf der Tafel laufen die Bilder weiter');
+  const camW = await cm.evaluate(() => [...document.querySelectorAll('#cam-slot video')].map(v => v.videoWidth));
+  assert(camW.every(w => w > 0 && w <= 400), `Verschickt werden kleine Bilder, auch wenn die Kamera größer filmt (${camW})`);
   assert(await cm.isVisible('#t-cam') && await cm.isVisible('.board'), 'Kamera-Knopf in der Kopfzeile, Tafel bleibt sichtbar');
   await cm.screenshot({ path: `${SHOTS}/73-kamera-tafel.png` });
 
