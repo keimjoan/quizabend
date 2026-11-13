@@ -53,6 +53,7 @@ p { margin: 0; }
 .hint { color: var(--ink-dim); font-size: 15px; }
 .row-btns { display: flex; flex-wrap: wrap; gap: 8px; }
 a { color: var(--brass); text-underline-offset: 3px; }
+.linkbtn { padding: 0; border: 0; background: none; color: var(--brass); font: inherit; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
 
 /* ---------- Klappziffern ---------- */
 .flaps { display: inline-flex; gap: .06em; vertical-align: middle; }
@@ -169,6 +170,29 @@ textarea.text-in { padding: 10px 14px; min-height: 64px; resize: vertical; line-
 .seg button[aria-pressed="true"] { background: var(--plate); color: var(--ink); box-shadow: inset 0 0 0 1px rgba(242,233,211,.24); }
 .rules { margin: 0; padding-left: 1.5em; display: grid; gap: 8px; }
 .rules li::marker { font-family: var(--font-display); font-weight: 900; color: var(--brass); }
+/* Ausklappmenü „Spielregeln und Anleitungen“ */
+.hero-row { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 24px; }
+.hero-row p { flex: 1 1 360px; }
+.helpmenu { position: relative; margin-left: auto; }
+.helpmenu > .btn svg { transition: transform .15s; }
+.helpmenu > .btn[aria-expanded="true"] svg { transform: rotate(180deg); }
+.help-list { position: absolute; z-index: 40; top: calc(100% + 6px); right: 0; width: max-content; max-width: calc(100vw - 32px); display: grid; gap: 2px; padding: 6px; border-radius: 14px; background: var(--plate-dark); box-shadow: inset 0 0 0 1px var(--line), 0 20px 50px rgba(0,0,0,.5); }
+.help-list[hidden] { display: none; }
+.help-list button, .help-list a { display: block; padding: 12px 16px; border: 0; border-radius: 10px; background: transparent; color: var(--ink); font: inherit; font-weight: 700; font-size: 17px; text-align: left; text-decoration: none; }
+.help-list button:hover, .help-list a:hover { background: var(--plate); }
+.help-list a { color: var(--ink-dim); font-weight: 400; }
+.modal h3 { font-weight: 700; font-size: 19px; color: var(--brass); }
+.modal .rules { gap: 10px; }
+/* Aufklappbare Kategorien */
+.fold { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 44px; padding: 0; border: 0; background: transparent; color: var(--ink); font: inherit; letter-spacing: inherit; text-align: left; cursor: pointer; }
+.fold-t { flex: 1; }
+.fold .hint { font-family: var(--font-body); font-weight: 400; letter-spacing: 0; }
+.fold:hover .fold-t { color: var(--brass); }
+.fold svg { width: 26px; height: 26px; flex: none; transition: transform .15s; }
+.fold[aria-expanded="true"] svg { transform: rotate(180deg); }
+.fold-body { display: grid; gap: 16px; }
+.fold-body[hidden] { display: none; }
+.panel.solo { max-width: 780px; }
 .startbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px 24px; padding: 18px clamp(16px, 2.2vw, 24px); border-radius: 18px; background: var(--plate); box-shadow: inset 0 0 0 1px var(--line); }
 .boards-pick { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; }
 .stepper { display: flex; align-items: center; gap: 12px; }
@@ -668,6 +692,7 @@ const ICONS = {
   check: '<path d="m5 12.5 4.5 4.5L19 7.5"/>',
   plus: '<path d="M12 5v14"/><path d="M5 12h14"/>',
   minus: '<path d="M5 12h14"/>',
+  chev: '<path d="m6 9 6 6 6-6"/>',
   eye: '<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12Z"/><circle cx="12" cy="12" r="3"/>'
 };
 const icon = n => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[n]}</svg>`;
@@ -707,7 +732,7 @@ const sfx = (() => {
 /* =========================================================
    Zustand
    ========================================================= */
-const ui = { mode: 'setup', editSel: null, keyCapture: -1, titleDone: false };
+const ui = { mode: 'setup', editSel: null, keyCapture: -1, titleDone: false, help: false, catsOpen: false };
 // Online-Spiele und „Handy als Spielleitung“ brauchen einen Raum: in Claude den von Claude, sonst den eigenen
 // Raum-Server (Ordner server/). Tests und andere Server setzen vorher window.QUIZ_ROOM_URL ('' schaltet ihn ab).
 // Ohne Raum startet die Seite bei „Ein Bildschirm“.
@@ -982,27 +1007,32 @@ function setupHTML() {
     <header class="hero">
       <h1 class="sr">Quizabend</h1>
       ${flaps('QUIZABEND', 'title-flaps')}
-      <p>Ein Punkte-Quiz für Teams oder jeden für sich. Jedes Board hat fünf Kategorien mit je fünf Fragen von 100 bis 500 Punkten.</p>
-      <p><a href="boards.html" id="link-boards">Eigene Boards erstellen</a>: Vorlagen für Excel und Google Sheets, ein Claude-Skill und die Anleitung.</p>
+      <div class="hero-row">
+        <p>Ein Punkte-Quiz für Teams oder jeden für sich. Jedes Board hat fünf Kategorien mit je fünf Fragen von 100 bis 500 Punkten.</p>
+        ${helpMenuHTML()}
+      </div>
     </header>
     <div id="join-slot">${joinHTML()}</div>
     <div class="modetabs" role="tablist" aria-label="Spielart">
-      <button class="modetab" role="tab" id="tab-online" aria-selected="${tab === 'online'}" data-act="tab" data-v="online"><b>Online, jeder am eigenen PC</b><span>Ohne Spielleitung. Jeder meldet sich mit seinem Namen an, tippt Antworten ein und prüft sie selbst. Die anderen kontrollieren per Abstimmung.</span></button>
-      <button class="modetab" role="tab" id="tab-local" aria-selected="${tab === 'local'}" data-act="tab" data-v="local"><b>Ein Bildschirm mit Spielleitung</b><span>Alle schauen auf einen Bildschirm. Eine Person liest vor und bewertet, gebuzzert wird per Taste.</span></button>
+      <button class="modetab" role="tab" id="tab-online" aria-selected="${tab === 'online'}" data-act="tab" data-v="online"><b>Online, jeder am eigenen PC</b><span>Jeder spielt am eigenen Gerät und tippt seine Antworten ein.</span></button>
+      <button class="modetab" role="tab" id="tab-local" aria-selected="${tab === 'local'}" data-act="tab" data-v="local"><b>Ein Bildschirm mit Spielleitung</b><span>Alle schauen auf einen Bildschirm, eine Person liest vor und bewertet.</span></button>
     </div>
     ${tab === 'online' ? onlineStartHTML() : localSetupHTML()}
   </main>`;
 }
 function catsPanelHTML() {
   const all = poolAll(), sel = selectedCats(), off = new Set(prefs.off);
-  return `<div class="panel-head"><h2 id="h-cats">Kategorien</h2><span class="hint">${sel.length} von ${all.length} ausgewählt</span></div>
+  return `<h2 id="h-cats"><button class="fold" id="cats-fold" data-act="cats-fold" aria-expanded="${ui.catsOpen}" aria-controls="cats-body">
+      <span class="fold-t">Kategorien</span><span class="hint">${sel.length} von ${all.length} ausgewählt</span>${icon('chev')}</button></h2>
+    <div class="fold-body" id="cats-body" ${ui.catsOpen ? '' : 'hidden'}>
     <div class="chips">${all.map(c => `<button class="chip" id="cat-${esc(c.id)}" data-act="cat-toggle" data-id="${esc(c.id)}" aria-pressed="${!off.has(c.id)}">${esc(c.name)}${c.own ? '<small>eigene</small>' : ''}</button>`).join('')}</div>
     <div class="row-btns">
       <button class="btn btn-plain btn-sm" id="cats-all" data-act="cat-all">Alle auswählen</button>
       <button class="btn btn-plain btn-sm" id="cats-none" data-act="cat-none">Keine</button>
       ${ui.mode === 'setup' ? '<button class="btn btn-plain btn-sm" id="open-editor" data-act="open-editor">Eigene Fragen schreiben</button>' : ''}
     </div>
-    <p class="hint">Für jedes Board werden fünf Kategorien zufällig gezogen. Schon gespielte kommen erst wieder dran, wenn alle anderen durch sind.</p>`;
+    <p class="hint">Für jedes Board werden fünf Kategorien zufällig gezogen. Schon gespielte kommen erst wieder dran, wenn alle anderen durch sind.</p>
+    </div>`;
 }
 function localSetupHTML() {
   const br = boardRange(), maxB = br.ok ? br.max : 0;
@@ -1024,20 +1054,6 @@ function localSetupHTML() {
           <div class="row-btns"><button class="btn btn-plain" id="team-add" data-act="team-add" ${n >= MAX_TEAMS ? 'disabled' : ''}>${icon('plus')} Team hinzufügen</button></div>
           <p class="hint">Mit seiner Taste buzzert ein Team, sobald eine Frage frei ist. Antippen der Teamanzeige geht auch.</p>
         </section>
-        <section class="panel" aria-labelledby="h-rules">
-          <h2 id="h-rules">So wird gespielt</h2>
-          <ol class="rules">
-            <li>Das Team am Zug wählt eine Kategorie und einen Punktwert, zum Beispiel Geografie für 400.</li>
-            <li>Ist die Antwort richtig, bekommt das Team die Punkte. Ist sie falsch, wird die Hälfte abgezogen.</li>
-            <li>Nach einer falschen Antwort dürfen die anderen Teams buzzern. Wer zuerst drückt, antwortet.</li>
-            <li>Danach ist die Frage verbraucht und das nächste Team ist dran. Ist das Board leer, kommt das nächste.</li>
-          </ol>
-          <p class="hint">Eine Person leitet das Spiel. Sie liest die Fragen vor und klickt auf Richtig oder Falsch. Die Lösung sieht sie, solange sie „Lösung spicken“ gedrückt hält.<span id="phone-hint">${phoneHint()}</span></p>
-        </section>
-      </div>
-      <div class="col">
-        <section class="panel" aria-labelledby="h-own">${boardsPanelHTML()}</section>
-        <section class="panel" aria-labelledby="h-cats">${catsPanelHTML()}</section>
         <section class="panel" aria-labelledby="h-opts">
           <h2 id="h-opts">Optionen</h2>
           <div class="opt"><span class="opt-label" id="lbl-timer">Antwortzeit</span>
@@ -1057,6 +1073,10 @@ function localSetupHTML() {
             </div>
           </div>
         </section>
+      </div>
+      <div class="col">
+        <section class="panel" aria-labelledby="h-own">${boardsPanelHTML()}</section>
+        <section class="panel" aria-labelledby="h-cats">${catsPanelHTML()}</section>
       </div>
     </div>
     <div class="startbar">
@@ -1110,20 +1130,88 @@ function onlineStartHTML() {
   else body = `<div class="field"><label for="me-name">Dein Name</label><input class="text-in" id="me-name" data-input="me-name" value="${esc(me.name)}" maxlength="20" autocomplete="nickname" placeholder="So sehen dich die anderen"></div>
       <p class="err" id="me-err" role="alert">${esc(on.err)}</p>
       <div id="games-slot">${openGamesHTML()}</div>
-      <div class="row-btns"><button class="btn btn-brass btn-lg" id="o-create" data-act="o-create">Neues Online-Spiel eröffnen</button></div>`;
-  return `${saved}<div class="cols">
-    <section class="panel" aria-labelledby="h-online"><h2 id="h-online">Online spielen</h2>${body}</section>
-    <section class="panel" aria-labelledby="h-orules"><h2 id="h-orules">So läuft ein Online-Spiel</h2>
-      <ol class="rules">
-        <li>Wer das Spiel eröffnet, ist Gastgeber und spielt mit. Alle anderen melden sich mit ihrem Namen an und treten bei.</li>
-        <li>Wer am Zug ist, wählt eine Frage und tippt die Antwort ein. Danach sieht nur er die Musterlösung und sagt selbst, ob er richtig lag.</li>
-        <li>Sagt er „richtig“, sehen alle Antwort und Lösung und stimmen ab. Bei mindestens 50 Prozent dafür gibt es die Punkte, sonst werden die vollen Punkte abgezogen.</li>
-        <li>Sagt er „falsch“, verliert er die Hälfte. Dann dürfen die anderen buzzern, jeder einmal. Wer zuerst drückt, antwortet und prüft sich genauso selbst.</li>
-      </ol>
-      <p class="hint">Der Gastgeber kann in der Lobby auch selbst moderieren: Dann sieht er die Lösungen, entscheidet über jede Antwort und spielt nicht mit. Oder er schaltet einen KI-Spielleiter ein. Dann prüft Claude die Antworten, Selbstbewertung und Abstimmung entfallen. Dafür braucht der Gastgeber einen eigenen Claude-API-Schlüssel.</p>
-      <p class="hint">${inviteHTML()}</p>
-    </section>
-  </div>`;
+      <div class="row-btns"><button class="btn btn-brass btn-lg" id="o-create" data-act="o-create">Neues Online-Spiel eröffnen</button></div>
+      <p class="hint">${inviteHTML()}</p>`;
+  return `${saved}<section class="panel solo" aria-labelledby="h-online"><h2 id="h-online">Online spielen</h2>${body}</section>`;
+}
+
+/* ---------- Hilfe: Spielregeln und Anleitungen ----------
+   Stehen nicht auf der Startseite, sondern im Ausklappmenü (Startseite und Lobby). Jeder Punkt öffnet einen Dialog. */
+const HELP = [
+  ['local', 'Spielregeln: Ein Bildschirm mit Spielleitung'],
+  ['online', 'Spielregeln: Online, jeder am eigenen PC'],
+  ['ki', 'Anleitung: KI-Spielleiter und API-Schlüssel'],
+  ['boards', 'Anleitung: Eigene Boards importieren']
+];
+function helpMenuHTML() {
+  return `<div class="helpmenu">
+    <button class="btn btn-plain" id="help-btn" data-act="help-menu" aria-expanded="${ui.help}" aria-controls="help-list">Spielregeln und Anleitungen ${icon('chev')}</button>
+    <div class="help-list" id="help-list" ${ui.help ? '' : 'hidden'}>
+      ${HELP.map(([k, t]) => `<button id="help-${k}" data-act="help" data-v="${k}">${t}</button>`).join('')}
+      <a id="link-boards" href="boards.html" target="_blank" rel="noopener">Vorlagen und Downloads für eigene Boards</a>
+    </div></div>`;
+}
+function helpBody(k) {
+  if (k === 'local') return `<ol class="rules">
+      <li>2 bis 6 Teams spielen an einem Bildschirm. Jedes Team hat eine Buzzer-Taste auf der Tastatur.</li>
+      <li>Das Team am Zug wählt eine Kategorie und einen Punktwert, zum Beispiel Geografie für 400.</li>
+      <li>Ist die Antwort richtig, bekommt das Team die Punkte. Ist sie falsch, wird die Hälfte abgezogen.</li>
+      <li>Nach einer falschen Antwort dürfen die anderen Teams buzzern, jedes einmal. Wer zuerst seine Taste drückt, antwortet. Eine falsche Antwort nach dem Buzzern kostet auch die Hälfte, das lässt sich in den Optionen abschalten.</li>
+      <li>Danach ist die Frage verbraucht und das nächste Team ist dran. Ist das Board leer, kommt das nächste.</li>
+    </ol>
+    <h3>Die Spielleitung</h3>
+    <p>Eine Person liest die Fragen vor und klickt auf Richtig oder Falsch. Die Lösung sieht sie, solange sie „Lösung spicken“ gedrückt hält.<span id="phone-hint">${phoneHint()}</span></p>
+    <p class="hint">Mit Strg+Z nimmt die Spielleitung die letzte Wertung zurück. Punkte lassen sich auch von Hand anpassen. Der Spielstand übersteht ein Neuladen der Seite.</p>`;
+  if (k === 'online') return `<ol class="rules">
+      <li>Wer das Spiel eröffnet, ist Gastgeber und schickt den anderen den Raum-Link. Alle melden sich mit ihrem Namen an und treten bei, bis zu 12 Leute. Gespielt wird jeder für sich oder in Teams.</li>
+      <li>Wer am Zug ist, wählt eine Frage und tippt die Antwort ein. „Weiß ich nicht“ oder Zeitablauf zählt als falsch.</li>
+      <li>Richtig gibt die vollen Punkte. Falsch kostet die Hälfte, dann dürfen die anderen buzzern, jeder einmal. Wer zuerst drückt, antwortet.</li>
+    </ol>
+    <h3>Wer entscheidet, ob eine Antwort stimmt</h3>
+    <p>Das stellt der Gastgeber in der Lobby unter „Wertung der Antworten“ ein:</p>
+    <ul class="rules">
+      <li><b>Selbst bewerten und abstimmen:</b> Nur wer geantwortet hat, sieht die Musterlösung und sagt selbst, ob er richtig lag. Sagt er „richtig“, stimmen alle anderen ab. Bei mindestens 50 Prozent dafür gibt es die Punkte, sonst werden die vollen Punkte abgezogen.</li>
+      <li><b>Ich moderiere:</b> Der Gastgeber sieht die Lösungen, entscheidet per Klick über jede Antwort und spielt selbst nicht mit.</li>
+      <li><b>KI-Spielleiter:</b> Claude vergleicht jede Antwort mit der Musterlösung. Dafür braucht der Gastgeber einen eigenen Claude-API-Schlüssel, siehe die Anleitung im Menü.</li>
+    </ul>
+    <p class="hint">Jeder kann in der Lobby oder während des Spiels seine Kamera einschalten. Die Bilder gehen direkt von Browser zu Browser, ohne Ton.</p>`;
+  if (k === 'ki') return `<p>Mit dem KI-Spielleiter prüft Claude jede getippte Antwort gegen die Musterlösung. Richtig gibt sofort die Punkte, Selbstbewertung und Abstimmung entfallen. Nur der Gastgeber braucht dafür einen Claude-API-Schlüssel und zahlt die Runde, die Mitspieler brauchen nichts.</p>
+    <h3>So bekommst du einen Schlüssel</h3>
+    <ol class="rules">
+      <li>Auf <a href="https://platform.claude.com" target="_blank" rel="noopener">platform.claude.com</a> ein Konto anlegen oder anmelden.</li>
+      <li>Unter „Billing“ etwas Guthaben aufladen. Schon der kleinste Betrag reicht für mehrere Spielabende.</li>
+      <li>Unter „API Keys“ auf „Create Key“ klicken, einen Namen wie „Quizabend“ vergeben und den Schlüssel kopieren. Er beginnt mit sk-ant- und wird nur einmal angezeigt.</li>
+    </ol>
+    <h3>So schaltest du ihn ein</h3>
+    <ol class="rules">
+      <li>Ein Online-Spiel eröffnen. In der Lobby unter „Wertung der Antworten“ auf „KI-Spielleiter“ klicken.</li>
+      <li>Das Modell wählen: ${esc(KI_MODELS.opus.name)} ist gründlicher, ${esc(KI_MODELS.haiku.name)} ist schneller und billiger.</li>
+      <li>Den Schlüssel einfügen und auf „Schlüssel prüfen“ klicken. Mit „Auf diesem Gerät merken“ musst du ihn beim nächsten Mal nicht neu eingeben.</li>
+    </ol>
+    <h3>Kosten und Sicherheit</h3>
+    <p>${esc(KI_MODELS.opus.name)}: ${esc(KI_MODELS.opus.cost)}. ${esc(KI_MODELS.haiku.name)}: ${esc(KI_MODELS.haiku.cost)}.</p>
+    <p class="hint">Der Schlüssel bleibt in deinem Browser und geht nur an Anthropic. Mitspieler und der Raum-Server bekommen ihn nie. In der Claude Console kannst du ein Ausgabenlimit setzen und den Schlüssel jederzeit löschen. Antwortet die KI einmal nicht, wird diese Antwort nach den normalen Regeln gewertet.</p>`;
+  return `<ol class="rules">
+      <li><b>Vorlage holen:</b> Auf der Seite <a href="boards.html" target="_blank" rel="noopener">Eigene Boards</a> gibt es eine Excel-Vorlage, eine Google-Sheets-Vorlage zum Kopieren und ein Beispiel. Dort liegt auch ein Claude-Skill, der dir Boards zu jedem Thema schreibt.</li>
+      <li><b>Ausfüllen:</b> Die Spalten heißen Board, Kategorie, Punkte, Frage, Antwort. Board und Kategorie reichen in der ersten Zeile, sie gelten nach unten weiter. Jedes Board braucht genau fünf Kategorien mit je fünf Fragen von 100 bis 500 Punkten.</li>
+      <li><b>Importieren:</b> Auf der Startseite oder als Gastgeber in der Lobby unter „Eigene Boards“ auf „Board importieren“ klicken. Eine Datei wählen (Excel, CSV oder JSON) oder in Excel bzw. Google Sheets die Zellen samt Kopfzeile kopieren und einfügen.</li>
+      <li><b>Spielen:</b> Ausgewählte eigene Boards kommen zuerst dran, in ihrer Reihenfolge. Danach werden Boards aus den Kategorien gezogen.</li>
+    </ol>
+    <p class="hint">Stimmt etwas nicht, nennt die Fehlermeldung die Stelle. Die Boards bleiben in diesem Browser gespeichert, bis zu 30 Stück.</p>`;
+}
+function openHelp(k) {
+  const item = HELP.find(h => h[0] === k);
+  if (!item) return;
+  const canImport = k === 'boards' && (ui.mode === 'setup' || (ui.mode === 'online' && on.role === 'host' && on.og && on.og.ph === 'lobby'));
+  openModal(`<h2 id="mt">${esc(item[1].replace(/^[^:]+: /, ''))}</h2>${helpBody(k)}
+    <div class="actions">${canImport ? '<button class="btn btn-plain" data-act="ownb-import">Board importieren</button>' : ''}<button class="btn btn-brass" data-act="modal-close">Schließen</button></div>`, 'wide');
+  const m = $('#modal-root .modal'); if (m) m.scrollTop = 0;
+}
+function helpToggle(open) {
+  ui.help = open;
+  const b = $('#help-btn'), l = $('#help-list');
+  if (b) b.setAttribute('aria-expanded', String(open));
+  if (l) l.hidden = !open;
 }
 function onlineGames() {
   const seen = new Set();
@@ -2144,7 +2232,7 @@ function kiFallback() {
   cur.st = 'judge'; cur.dl = Date.now() + JUDGE_MS; cur.kf = 1;
 }
 function kiBoxHTML() {
-  const info = `<p class="hint">Claude vergleicht jede getippte Antwort mit der Musterlösung und entscheidet sofort. Selbstbewertung und Abstimmung entfallen. Der KI-Spielleiter läuft über deinen eigenen Claude-API-Schlüssel von platform.claude.com. Die Kosten trägst du: mit ${kiModel().name} ${kiModel().cost}.</p>`;
+  const info = `<p class="hint">Claude vergleicht jede getippte Antwort mit der Musterlösung und entscheidet sofort. Selbstbewertung und Abstimmung entfallen. Der KI-Spielleiter läuft über deinen eigenen Claude-API-Schlüssel von platform.claude.com. Die Kosten trägst du: mit ${kiModel().name} ${kiModel().cost}. <button class="linkbtn" id="ki-help" data-act="help" data-v="ki">So bekommst du einen Schlüssel</button></p>`;
   if (kiKey) return `<div class="kibox">${info}
     <p id="ki-ok"><b>Schlüssel bereit:</b> <code>sk-ant-…${esc(kiKey.slice(-4))}</code> ${kiKeep ? '(auf diesem Gerät gemerkt)' : '(bis du diesen Tab schließt)'}</p>
     <button class="btn btn-plain btn-sm" id="ki-clear" data-act="ki-clear">Schlüssel entfernen</button></div>`;
@@ -2481,7 +2569,7 @@ function oLobbyHTML(v) {
     </div>` : `<div class="startbar"><p>Warte, bis ${esc(hostP ? hostP[1] : 'der Gastgeber')} das Spiel startet.</p></div>`;
   return `<main class="lobby">
     <header class="lobby-head"><h1>Lobby</h1><p class="lead">Quizabend von ${esc(hostP ? hostP[1] : '…')}</p><span class="spacer"></span>
-      ${camBtn(true)}<button class="btn btn-plain" data-act="o-leave">${isHost ? 'Spiel schließen' : 'Lobby verlassen'}</button></header>
+      ${helpMenuHTML()}${camBtn(true)}<button class="btn btn-plain" data-act="o-leave">${isHost ? 'Spiel schließen' : 'Lobby verlassen'}</button></header>
     ${camErrHTML()}<div id="cam-slot" class="camslot"></div>
     ${isHost ? `<div class="banner"><p>${inviteHTML()}</p></div>` : ''}
     ${on.stale ? '<div class="banner warn"><p>Keine Verbindung zum Gastgeber. Wenn das so bleibt, wurde das Spiel vermutlich beendet.</p></div>' : ''}
@@ -2735,6 +2823,7 @@ function oLeaveAsk() {
    ========================================================= */
 document.addEventListener('click', e => {
   const el = e.target.closest('[data-act]');
+  if (ui.help && !e.target.closest('.helpmenu')) helpToggle(false);
   if (e.target.classList && e.target.classList.contains('modal-back')) { closeModal(); return; }
   if (!el || el.disabled) return;
   const act = el.dataset.act, i = Number(el.dataset.i);
@@ -2742,6 +2831,9 @@ document.addEventListener('click', e => {
   const catsChanged = () => { savePrefs(); if (ui.mode === 'online' && on.role === 'host') oBump(); else render(); };
   switch (act) {
     case 'tab': prefs.tab = el.dataset.v === 'local' ? 'local' : 'online'; savePrefs(); render(); break;
+    case 'help-menu': helpToggle(!ui.help); break;
+    case 'help': helpToggle(false); openHelp(el.dataset.v); break;
+    case 'cats-fold': ui.catsOpen = !ui.catsOpen; render(); break;
     /* Einrichtung */
     case 'team-add': {
       if (prefs.teams.length >= MAX_TEAMS) break;
@@ -2934,7 +3026,10 @@ document.addEventListener('keydown', e => {
     }
     return;
   }
-  if (e.key === 'Escape') { closeModal(); return; }
+  if (e.key === 'Escape') {
+    if (ui.help) { helpToggle(false); const b = $('#help-btn'); if (b) b.focus(); return; }
+    closeModal(); return;
+  }
   const peek = e.target.closest && e.target.closest('[data-hold="peek"]');
   if (peek && (e.key === ' ' || e.key === 'Enter')) { e.preventDefault(); setPeek(true); return; }
   if (isTyping(e.target) || $('#modal-root').innerHTML) return;

@@ -181,6 +181,21 @@ const MOCK_ROOM = `(() => {
 
   /* ---------------- 2. Eigene Fragen ---------------- */
   console.log('\n[2] Eigene Fragen');
+  // Startseite: Regeln und Anleitungen im Ausklappmenü, Kategorien eingeklappt
+  assert(!(await page.isVisible('.setup .rules')) && !(await page.isVisible('#help-list')), 'Keine Spielregeln auf der Startseite, Menü zu');
+  assert(!(await page.isVisible('#cats-body')) && (await page.textContent('#cats-fold')).includes('ausgewählt'), 'Kategorien eingeklappt, Anzahl sichtbar');
+  for (const k of ['local', 'online', 'ki', 'boards']) {
+    await page.click('#help-btn');
+    assert(await page.isVisible(`#help-${k}`), `Menüpunkt ${k} sichtbar`);
+    await page.click(`#help-${k}`);
+    assert(!(await page.isVisible('#help-list')) && (await page.$$('.modal .rules')).length > 0, `Anleitung ${k} öffnet sich`);
+    if (k === 'local') await page.screenshot({ path: `${SHOTS}/08b-hilfe.png` });
+    await page.click('.modal [data-act="modal-close"]');
+  }
+  await page.click('#help-btn'); await page.keyboard.press('Escape');
+  assert(!(await page.isVisible('#help-list')), 'Escape schließt das Menü');
+  await page.click('#cats-fold');
+  assert(await page.isVisible('#cats-body') && await page.isVisible('#cats-all'), 'Kategorien aufgeklappt');
   await page.click('#open-editor');
   await page.click('#ed-new');
   await page.fill('#ed-name', 'Unsere Clique');
