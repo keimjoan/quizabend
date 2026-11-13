@@ -195,7 +195,9 @@ textarea.text-in { padding: 10px 14px; min-height: 64px; resize: vertical; line-
 .cam .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cam .camwait { position: absolute; inset: 0; display: grid; place-items: center; padding: 6px; text-align: center; color: var(--ink-dim); font-size: 13px; }
 .cam .camwait:empty { display: none; }
-.icon-btn.lit { color: var(--brass); }
+.btn.lit { color: var(--brass); box-shadow: inset 0 0 0 2px var(--brass); }
+.camtog svg { width: 18px; height: 18px; }
+.camerr { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; font-weight: 400; color: var(--ink); padding: 10px 14px; border-radius: 10px; background: rgba(255,122,107,.1); box-shadow: inset 0 0 0 1px rgba(255,122,107,.5); }
 .kibox { justify-self: stretch; display: grid; gap: 10px; justify-items: start; padding: 14px 16px; border-radius: 12px; background: rgba(0,0,0,.2); box-shadow: inset 0 0 0 1px var(--line); }
 .kibox .text-in { width: 100%; }
 .kibox code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
@@ -2163,25 +2165,40 @@ function kiBoxHTML() {
 const RTC_ICE = Array.isArray(window.QUIZ_ICE) ? window.QUIZ_ICE : [{ urls: ['stun:stun.cloudflare.com:3478', 'stun:stun.l.google.com:19302'] }];
 const CAM_OK = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.RTCPeerConnection);
 const CAM_BITRATE = 200000;
-const cam = { stream: null, busy: false, pcs: new Map() };
+const cam = { stream: null, busy: false, pcs: new Map(), err: '' };
 let camEl = null;
 
 const camGame = () => on.role === 'host' ? (on.og ? on.og.id : null) : on.role === 'player' ? on.gid : null;
 const camMe = () => { const p = peers.find(x => x.isMe); return p ? p.peer : ''; };
 const camPeers = gid => peers.filter(p => !p.isMe && !p.sameTab && p.presence && p.presence.game === gid && (p.presence.role === 'ohost' || p.presence.role === 'oplayer'));
 
+/* Fehlermeldung zum Einschalten, bleibt sichtbar, bis es klappt oder die Kamera wieder versucht wird */
+function camErrText(e) {
+  const n = e && e.name;
+  if (n === 'NotAllowedError' || n === 'SecurityError' || n === 'PermissionDeniedError')
+    return 'Die Kamera ist für diese Seite gesperrt. Klicke in der Adressleiste links auf das Schloss- oder Kamerasymbol, erlaube die Kamera und versuch es noch einmal. Am Handy steht das in den Einstellungen des Browsers.';
+  if (n === 'NotFoundError' || n === 'DevicesNotFoundError' || n === 'OverconstrainedError') return 'Dieses Gerät hat keine Kamera, die der Browser benutzen kann.';
+  if (n === 'NotReadableError' || n === 'TrackStartError' || n === 'AbortError')
+    return 'Die Kamera ist gerade belegt, zum Beispiel von Zoom, Teams oder einem anderen Browser-Tab. Schließe das und versuch es noch einmal.';
+  return `Die Kamera lässt sich nicht einschalten${n ? ` (${n})` : ''}.`;
+}
 async function camToggle() {
-  if (cam.busy || !CAM_OK) return;
+  if (cam.busy) return;
   if (cam.stream) { camStop(); return; }
-  cam.busy = true; render();
-  try {
-    cam.stream = await navigator.mediaDevices.getUserMedia({ audio: false,
-      video: { width: { ideal: 320 }, height: { ideal: 240 }, frameRate: { ideal: 15, max: 20 }, facingMode: 'user' } });
-  } catch (e) {
-    cam.stream = null;
-    toast(e && e.name === 'NotAllowedError' ? 'Der Browser hat die Kamera nicht freigegeben. Erlaube sie in den Einstellungen dieser Seite.'
-      : e && e.name === 'NotFoundError' ? 'Keine Kamera gefunden.' : 'Die Kamera lässt sich gerade nicht einschalten. Ist sie in einem anderen Programm offen?');
+  if (!CAM_OK) {
+    cam.err = window.isSecureContext === false ? 'Die Kamera geht nur über eine sichere Adresse (https), zum Beispiel https://keimjoan.github.io/quizabend/.'
+      : 'Dieser Browser kann keine Kamerabilder verschicken. Nimm einen aktuellen Chrome, Edge, Firefox oder Safari.';
+    render(); return;
   }
+  cam.busy = true; cam.err = ''; render();
+  // Erst kleine Bilder, sonst die einfachste Anfrage, die jede Kamera erfüllt. Gesperrt bleibt gesperrt.
+  const asks = [{ audio: false, video: { width: { ideal: 320 }, height: { ideal: 240 }, frameRate: { ideal: 15 }, facingMode: 'user' } }, { audio: false, video: true }];
+  let err = null;
+  for (const a of asks) {
+    try { cam.stream = await navigator.mediaDevices.getUserMedia(a); err = null; break; }
+    catch (e) { err = e; cam.stream = null; if (e && /NotAllowed|Security|PermissionDenied/.test(e.name)) break; }
+  }
+  if (err) cam.err = camErrText(err);
   cam.busy = false;
   if (cam.stream && !camGame()) { camStop(); return; }
   if (cam.stream) for (const c of cam.pcs.values()) camAddTracks(c);
@@ -2327,12 +2344,13 @@ function camDraw() {
   else if (camEl.parentNode) camEl.remove();
   for (const v of camEl.querySelectorAll('video')) if (v.srcObject && v.paused) v.play().catch(() => {});
 }
+/* Knopf zum Ein- und Ausschalten der eigenen Kamera: groß in der Lobby, klein in der Kopfzeile des Spiels */
 function camBtn(big) {
-  if (!CAM_OK || !roomNs) return '';
+  if (!roomNs) return '';
   const onNow = !!cam.stream, label = cam.busy ? 'Kamera startet …' : onNow ? 'Kamera ausschalten' : 'Kamera einschalten';
-  if (big) return `<button class="btn btn-plain" id="o-cam" data-act="cam" aria-pressed="${onNow}" ${cam.busy ? 'disabled' : ''}>${icon(onNow ? 'cam' : 'camoff')} ${label}</button>`;
-  return `<button class="icon-btn${onNow ? ' lit' : ''}" id="t-cam" data-act="cam" aria-pressed="${onNow}" aria-label="${label}" title="${label}" ${cam.busy ? 'disabled' : ''}>${icon(onNow ? 'cam' : 'camoff')}</button>`;
+  return `<button class="btn btn-plain${big ? '' : ' btn-sm camtog'}${onNow ? ' lit' : ''}" id="${big ? 'o-cam' : 't-cam'}" data-act="cam" aria-pressed="${onNow}" ${cam.busy ? 'disabled' : ''}>${icon(onNow ? 'cam' : 'camoff')} ${label}</button>`;
 }
+const camErrHTML = () => cam.err ? `<p class="err camerr" id="cam-err" role="alert">${esc(cam.err)} <button class="btn btn-plain btn-sm" data-act="cam-err-x">Schließen</button></p>` : '';
 
 /* ---------- Online: Spieler ---------- */
 const INPUT_KEYS = { team: null, pick: null, ans: null, pass: null, vote: null, nx: null, claim: null, buzz: null };
@@ -2464,7 +2482,7 @@ function oLobbyHTML(v) {
   return `<main class="lobby">
     <header class="lobby-head"><h1>Lobby</h1><p class="lead">Quizabend von ${esc(hostP ? hostP[1] : '…')}</p><span class="spacer"></span>
       ${camBtn(true)}<button class="btn btn-plain" data-act="o-leave">${isHost ? 'Spiel schließen' : 'Lobby verlassen'}</button></header>
-    <div id="cam-slot" class="camslot"></div>
+    ${camErrHTML()}<div id="cam-slot" class="camslot"></div>
     ${isHost ? `<div class="banner"><p>${inviteHTML()}</p></div>` : ''}
     ${on.stale ? '<div class="banner warn"><p>Keine Verbindung zum Gastgeber. Wenn das so bleibt, wurde das Spiel vermutlich beendet.</p></div>' : ''}
     <div class="cols">
@@ -2549,7 +2567,7 @@ function oTopbarHTML(v, myT, T) {
     <div class="tools"><span class="mechip" style="--c:${meC}"><span class="lamp"></span>${v.set.mod && on.role === 'host' ? 'Du moderierst' : `Du spielst als <b>${esc(me.name)}</b>`}</span>${camBtn()}${soundBtn()}${fullBtn()}
     <button class="icon-btn" id="t-menu" data-act="o-menu" aria-label="Menü" title="Menü">${icon('menu')}</button></div>
     ${on.stale ? '<div class="banner warn conn"><p>Keine Verbindung zum Gastgeber. Wenn das so bleibt, wurde das Spiel vermutlich beendet.</p><button class="btn btn-plain btn-sm" data-act="o-leave">Zur Startseite</button></div>' : ''}
-    <div id="cam-slot" class="camslot"></div>
+    ${camErrHTML()}<div id="cam-slot" class="camslot"></div>
   </header>`;
 }
 function oBoardHTML(v, myT, T) {
@@ -2833,6 +2851,7 @@ document.addEventListener('click', e => {
     case 'o-discard': confirmBox('Online-Spiel beenden?', 'Das gespeicherte Online-Spiel wird gelöscht.', 'Beenden', () => { savedOnline = null; store.set(K.online, null); render(); }); break;
     case 'o-leave': oLeaveAsk(); break;
     case 'cam': camToggle(); break;
+    case 'cam-err-x': cam.err = ''; render(); break;
     case 'o-leave-ask': closeModal(); oLeaveAsk(); break;
     case 'o-set': oSet(el.dataset.k, ['mode', 'km', 'wert'].includes(el.dataset.k) ? el.dataset.v : Number(el.dataset.v)); break;
     case 'o-mod': { const c = on.view && on.view.cur; if (!c) break; on.sent = `m${c.qn}-${c.vi}`; oAct('mod', { q: c.qn, i: c.vi, ok: el.dataset.ok === '1' }); break; }
