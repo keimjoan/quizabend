@@ -9,8 +9,9 @@
     "test": "node tests/run-local.js && node tests/run-online.js",
     "test:local": "node tests/run-local.js",
     "test:online": "node tests/run-online.js",
-    "test:server": "node tests/run-online.js --server ws://127.0.0.1:8787 && node tests/run-media-server.js",
+    "test:server": "node tests/run-online.js --server ws://127.0.0.1:8787 && node tests/run-media-server.js && node tests/run-media-limit.js",
     "test:media": "node tests/run-media-server.js",
+    "test:limit": "node tests/run-media-limit.js",
     "vorlagen": "node tools/vorlagen.js"
   },
   "devDependencies": {

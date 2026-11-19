@@ -44,7 +44,15 @@ const MIB = 1024 * 1024;
 const PART = 20 * MIB;
 const MAX_SIZE = { bild: 5 * MIB, audio: 50 * MIB, video: 500 * MIB };
 const MAX_NAMES = { bild: 'Bilder 5 MB', audio: 'Audiodateien 50 MB', video: 'Videos 500 MB' };
-const DAY = { ip: { b: 3072 * MIB, f: 100 }, room: { b: 2048 * MIB, f: 40 }, all: { b: 20480 * MIB, f: 1000 } };
+// Grenzen pro Tag (b = Bytes, f = Dateien, a = Schreibvorgänge im R2-Speicher, r = Lesevorgänge)
+const DAY = { ip: { b: 3072 * MIB, f: 100, a: 1000, r: 2000 }, room: { b: 2048 * MIB, f: 40 }, all: { b: 20480 * MIB, f: 1000 } };
+// Grenzen pro Kalendermonat für den ganzen Server, damit der Medienspeicher nie über die Gratisgrenzen von Cloudflare R2 kommt
+// (10 GB Speicher, 1 Mio. Schreib- und 10 Mio. Lesevorgänge im Monat). Hochgeladen werden höchstens 10 GB im Monat. Da jede Datei
+// nach spätestens einem Tag gelöscht wird und nie mehr als diese 10 GB im Speicher liegen können, wird der Speicher nicht kostenpflichtig.
+// Die Variablen MONTH_BYTES, MONTH_FILES, MONTH_WRITES und MONTH_READS (wrangler.toml oder --var) dürfen die Grenzen nur senken.
+const MONTH = { b: 10e9, f: 2000, a: 500000, r: 2000000 };
+const MONTH_TEXT = 'Das Monatslimit des Medienspeichers ist erreicht (höchstens 10 GB im Monat). Starte ohne Medien oder versuche es im nächsten Monat noch einmal.';
+const DAY_TEXT = 'Heute wurden schon zu viele Dateien hochgeladen. Starte ohne Medien oder versuche es morgen noch einmal.';
 const ORIGIN = /^(https:\/\/keimjoan\.github\.io|http:\/\/(localhost|127\.0\.0\.1)(:\d+)?|null)$/;
 const MP4_BRANDS = ['isom', 'iso2', 'iso4', 'iso5', 'iso6', 'mp41', 'mp42', 'avc1', 'dash', 'M4V ', 'mmp4'];
 
@@ -84,10 +92,39 @@ function reply(req, obj, status = 200) {
 }
 const fail = (req, status, fehler) => reply(req, { fehler }, status);
 
-async function quota(env, name, add, lim) {
-  const r = await env.LIMITS.get(env.LIMITS.idFromName(name)).fetch(`https://quota/?b=${add.b}&f=${add.f}&mb=${lim.b}&mf=${lim.f}`);
-  return r.ok;
+function monthLimit(env) {
+  const low = (v, max) => { const n = v === undefined || v === '' ? NaN : Number(v); return Number.isFinite(n) && n >= 0 && n < max ? n : max; };
+  return { b: low(env.MONTH_BYTES, MONTH.b), f: low(env.MONTH_FILES, MONTH.f), a: low(env.MONTH_WRITES, MONTH.a), r: low(env.MONTH_READS, MONTH.r) };
 }
+const ipOf = req => req.headers.get('CF-Connecting-IP') || 'lokal';
+
+// Zähler (Durable Object Quota) mit diesem Namen. per 'd' zählt pro Tag, 'm' pro Kalendermonat (UTC). add darf negativ sein (zurückgeben).
+// Fällt der Zähler aus, gilt die Grenze als erreicht.
+async function quota(env, name, per, add, lim) {
+  const q = new URLSearchParams({ per });
+  for (const k of ['b', 'f', 'a', 'r']) {
+    if (add[k]) q.set(k, String(add[k]));
+    if (lim && lim[k] !== undefined) q.set('m' + k, String(lim[k]));
+  }
+  try { return (await env.LIMITS.get(env.LIMITS.idFromName(name)).fetch('https://quota/?' + q)).ok; }
+  catch (e) { return false; }
+}
+
+// Belegt nacheinander mehrere Zähler [Name, per, add, Grenzen]. Ist einer voll, wird alles Belegte zurückgegeben,
+// damit abgewiesene Aufrufe nichts verbrauchen. Liefert den Namen des vollen Zählers oder null.
+async function reserve(env, steps) {
+  const done = [];
+  for (const [name, per, add, lim] of steps) {
+    if (await quota(env, name, per, add, lim)) { done.push([name, per, add]); continue; }
+    for (const [n, p, a] of done) await quota(env, n, p, Object.fromEntries(Object.entries(a).map(([k, v]) => [k, -v])));
+    return name;
+  }
+  return null;
+}
+
+// Schreib- (a) und Lesevorgänge (r) im R2-Speicher, die ein Aufruf auslöst: pro Adresse und Tag sowie im Monat
+const ops = (env, req, a, r) => reserve(env, [['ip:' + ipOf(req), 'd', { a, r }, DAY.ip], ['monat', 'm', { a, r }, monthLimit(env)]]);
+const limitFail = (req, miss) => fail(req, 429, miss === 'monat' ? MONTH_TEXT : DAY_TEXT);
 
 async function readUpload(env, id) {
   const o = await env.MEDIA.get('u/' + id);
@@ -128,10 +165,10 @@ async function mediaStart(req, env, room, url) {
   const kind = sniff(new Uint8Array(buf, 0, 16));
   if (!kind) return fail(req, 415, 'Dieses Dateiformat ist nicht erlaubt. Erlaubt sind Bilder (PNG, JPEG, WebP, GIF), Audio (MP3, OGG, WAV, M4A) und Videos (MP4, WebM).');
   if (size > MAX_SIZE[kind.t]) return fail(req, 413, `Die Datei ist zu groß. Erlaubt sind ${MAX_NAMES[kind.t]}.`);
-  const ip = req.headers.get('CF-Connecting-IP') || 'lokal', add = { b: size, f: 1 };
-  if (!(await quota(env, 'ip:' + ip, add, DAY.ip)) || !(await quota(env, 'room:' + room, add, DAY.room)) || !(await quota(env, 'all', add, DAY.all))) {
-    return fail(req, 429, 'Heute wurden schon zu viele Dateien hochgeladen. Starte ohne Medien oder versuche es morgen noch einmal.');
-  }
+  // Monat zuerst: Ist er voll, kostet ein abgewiesener Aufruf nur einen Zählerzugriff. Bis 20 MiB genügt ein Schreibvorgang, sonst drei (Start, erster Teil, Merkzettel).
+  const day = { b: size, f: 1 }, add = { ...day, a: size <= PART ? 1 : 3 };
+  const miss = await reserve(env, [['monat', 'm', add, monthLimit(env)], ['all', 'd', day, DAY.all], ['ip:' + ipOf(req), 'd', add, DAY.ip], ['room:' + room, 'd', day, DAY.room]]);
+  if (miss) return limitFail(req, miss);
   const id = rid(), del = rid();
   const opts = { httpMetadata: { contentType: kind.ct }, customMetadata: { t: kind.t, del, size: String(size) } };
   if (size <= PART) {
@@ -152,6 +189,8 @@ async function mediaPart(req, env, id, n, url) {
   const want = n < count ? PART : u.size - (count - 1) * PART;
   const buf = await readBody(req, want);
   if (!buf) return fail(req, 400, 'Der Teil hat nicht die erwartete Größe.');
+  const miss = await ops(env, req, 1, 1);
+  if (miss) return limitFail(req, miss);
   const p = await env.MEDIA.resumeMultipartUpload('m/' + id, u.up).uploadPart(n, buf);
   return reply(req, { n, etag: p.etag });
 }
@@ -164,6 +203,8 @@ async function mediaEnd(req, env, id) {
   const count = Math.ceil(u.size / PART), parts = Array.isArray(b.parts) ? b.parts : [];
   const ok = parts.length === count && parts.every(p => p && Number.isInteger(p.n) && p.n >= 1 && p.n <= count && typeof p.etag === 'string' && p.etag.length < 200) && new Set(parts.map(p => p.n)).size === count;
   if (!ok) return fail(req, 400, 'Die Liste der Teile stimmt nicht.');
+  const miss = await ops(env, req, 1, 1);
+  if (miss) return limitFail(req, miss);
   let obj;
   try { obj = await env.MEDIA.resumeMultipartUpload('m/' + id, u.up).complete(parts.map(p => ({ partNumber: p.n, etag: p.etag }))); }
   catch (e) { return fail(req, 400, 'Die Teile passen nicht zusammen.'); }
@@ -176,9 +217,11 @@ async function mediaDelete(req, env) {
   let list;
   try { list = JSON.parse(await req.text()); } catch (e) { return fail(req, 400, 'Kein gültiges JSON.'); }
   if (!Array.isArray(list) || list.length > 100) return fail(req, 400, 'Die Liste ist zu lang.');
+  // Jeder Eintrag kostet bis zu zwei Lese- und einen Schreibvorgang im R2-Speicher: vorher in den Zählern reservieren
+  const valid = list.filter(e => Array.isArray(e) && /^[a-z0-9]{24}$/.test(e[0]) && typeof e[1] === 'string');
+  if (valid.length) { const miss = await ops(env, req, valid.length, 2 * valid.length); if (miss) return limitFail(req, miss); }
   let n = 0;
-  for (const e of list) {
-    if (!Array.isArray(e) || !/^[a-z0-9]{24}$/.test(e[0]) || typeof e[1] !== 'string') continue;
+  for (const e of valid) {
     const [id, del] = e, head = await env.MEDIA.head('m/' + id);
     if (head && head.customMetadata && head.customMetadata.del === del) { await env.MEDIA.delete('m/' + id); n++; continue; }
     const u = await readUpload(env, id);
@@ -216,15 +259,21 @@ async function mediaGet(req, env, id) {
   return new Response(obj.body, { status, headers: h });
 }
 
-/* Zähler pro Tag (je Adresse, Raum und für den ganzen Server), damit der Dateispeicher nicht missbraucht wird */
+/* Zähler für Bytes (b), Dateien (f), Schreib- (a) und Lesevorgänge (r): je Adresse, Raum und für den ganzen Server pro Tag,
+   dazu einer für den ganzen Server pro Monat. Der Zeitraum steht in der Anfrage (per=d oder per=m), neuer Zeitraum heißt bei null anfangen.
+   Eine Anfrage belegt alles oder nichts. Negative Werte geben Belegtes zurück. */
 export class Quota extends DurableObject {
   async fetch(req) {
-    const q = new URL(req.url).searchParams, b = Number(q.get('b')) || 0, f = Number(q.get('f')) || 0;
-    const day = new Date().toISOString().slice(0, 10);
+    const q = new URL(req.url).searchParams, keys = ['b', 'f', 'a', 'r'];
+    const period = new Date().toISOString().slice(0, q.get('per') === 'm' ? 7 : 10);
     let s = await this.ctx.storage.get('s');
-    if (!s || s.day !== day) s = { day, b: 0, f: 0 };
-    if (s.b + b > Number(q.get('mb')) || s.f + f > Number(q.get('mf'))) return new Response('voll', { status: 429 });
-    s.b += b; s.f += f;
+    if (!s || s.p !== period) s = { p: period, b: 0, f: 0, a: 0, r: 0 };
+    const add = {};
+    for (const k of keys) {
+      add[k] = Number(q.get(k)) || 0;
+      if (add[k] > 0 && q.has('m' + k) && !(s[k] + add[k] <= Number(q.get('m' + k)))) return new Response('voll', { status: 429 });
+    }
+    for (const k of keys) s[k] = Math.max(0, (s[k] || 0) + add[k]);
     await this.ctx.storage.put('s', s);
     return new Response('ok');
   }
