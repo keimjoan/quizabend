@@ -7,6 +7,20 @@ compatibility_date = "2025-09-01"
 name = "ROOMS"
 class_name = "Room"
 
+[[durable_objects.bindings]]
+name = "LIMITS"
+class_name = "Quota"
+
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["Room"]
+
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["Quota"]
+
+# Dateispeicher für Medien der laufenden Runde. Vorher einmalig anlegen: npx wrangler r2 bucket create quizabend-medien
+# und eine Löschregel nach einem Tag setzen (Sicherheitsnetz): npx wrangler r2 bucket lifecycle add quizabend-medien nach-einem-tag --expire-days 1 --abort-multipart-days 1
+[[r2_buckets]]
+binding = "MEDIA"
+bucket_name = "quizabend-medien"

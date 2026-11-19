@@ -179,6 +179,34 @@ const MOCK_ROOM = `(() => {
   await page.click('#t-menu'); await page.click('[data-act="new-setup-ask"]'); await page.click('[data-act="modal-ok"]');
   assert(await page.isVisible('#start'), 'Zurück in der Einrichtung');
 
+  /* ---------------- 1b. Doppelte Punkte im zweiten Board ---------------- */
+  console.log('\n[1b] Doppelte Punkte ab dem zweiten Board');
+  assert(await page.isVisible('#dbl-1'), 'Schalter „Doppelt“ ist bei zwei Boards sichtbar');
+  await page.click('#dbl-1'); await page.click('#start');
+  s = await state(page);
+  assert(s.settings.dbl === true, 'Einstellung steht im Spielstand');
+  assert((await page.textContent('#tile-0-4')) === '500', 'Board 1 zeigt normale Punkte (500)');
+  for (let r = 0; r < 5; r++) for (let c = 0; c < 5; c++) { await page.click(`#tile-${c}-${r}`); await page.click('#q-right'); await page.click('#q-next'); }
+  s = await state(page);
+  assert(s.dyn.phase === 'boardEnd' && s.dyn.scores.reduce((a, b) => a + b, 0) === 7500, 'Board 1: Summe 7500, nichts verdoppelt: ' + s.dyn.scores);
+  await page.click('#nb');
+  assert((await page.textContent('#tile-0-0')) === '200' && (await page.textContent('#tile-4-4')) === '1000', 'Board 2 zeigt 200 bis 1000 Punkte');
+  await page.screenshot({ path: `${SHOTS}/08c-doppelt.png` });
+  s = await state(page);
+  const dbBefore = s.dyn.scores.slice(), dbT = s.dyn.turn;
+  await page.click('#tile-2-3');
+  s = await state(page); assert(s.dyn.cur.v === 800, 'Frage mit 400 zählt 800 Punkte');
+  await page.click('#q-wrong');
+  s = await state(page); assert(s.dyn.scores[dbT] === dbBefore[dbT] - 400, 'Abzug ist die Hälfte von 800: ' + s.dyn.scores[dbT]);
+  await page.click('#q-nobody'); await page.click('#q-next');
+  s = await state(page);
+  const dbT2 = s.dyn.turn, dbBefore2 = s.dyn.scores.slice();
+  await page.click('#tile-0-4'); await page.click('#q-right');
+  s = await state(page); assert(s.dyn.scores[dbT2] === dbBefore2[dbT2] + 1000, 'Die 500er Frage bringt 1000 Punkte: ' + s.dyn.scores[dbT2]);
+  await page.click('#t-menu'); await page.click('[data-act="new-setup-ask"]'); await page.click('[data-act="modal-ok"]');
+  await page.click('#dbl-0');
+  assert((await page.evaluate(() => JSON.parse(localStorage.getItem('quizabend.prefs.v1')).dbl)) === false, 'Schalter zurück auf normal');
+
   /* ---------------- 2. Eigene Fragen ---------------- */
   console.log('\n[2] Eigene Fragen');
   // Startseite: Regeln und Anleitungen im Ausklappmenü, Kategorien eingeklappt
@@ -278,6 +306,87 @@ const MOCK_ROOM = `(() => {
   assert(s.boards.length === 3 && s.boards[0].cats[0].name === 'Party A K1' && s.boards[1].cats[4].name === 'Party B K5' && !s.boards[2].cats[0].name.startsWith('Party'), 'Eigene Boards zuerst und in Reihenfolge, danach ein zufälliges');
   assert(s.boards[0].cats[0].qs[0].a === 'A100', 'Board spielt die eigenen Fragen');
   await page.click('#t-menu'); await page.click('[data-act="new-setup-ask"]'); await page.click('[data-act="modal-ok"]');
+
+  /* ---------------- 2c. Medien zu Fragen (ein Bildschirm) ---------------- */
+  console.log('\n[2c] Medien zu Fragen');
+  const idbKeys = () => page.evaluate(() => new Promise((res, rej) => {
+    const r = indexedDB.open('quizabend-medien', 1);
+    r.onsuccess = () => { const q = r.result.transaction('d').objectStore('d').getAllKeys(); q.onsuccess = () => res(q.result); };
+    r.onerror = () => rej(r.error);
+  }));
+  const wavBuf = () => { const d = Buffer.alloc(8000, 128), h = Buffer.alloc(44); h.write('RIFF', 0); h.writeUInt32LE(36 + d.length, 4); h.write('WAVEfmt ', 8); h.writeUInt32LE(16, 16); h.writeUInt16LE(1, 20); h.writeUInt16LE(1, 22); h.writeUInt32LE(8000, 24); h.writeUInt32LE(8000, 28); h.writeUInt16LE(1, 32); h.writeUInt16LE(8, 34); h.write('data', 36); h.writeUInt32LE(d.length, 40); return Buffer.concat([h, d]); };
+  const mp4Buf = () => Buffer.concat([Buffer.from([0, 0, 0, 0x18]), Buffer.from('ftypisom'), Buffer.alloc(2000, 3)]);
+  const bigPng = Buffer.from(await page.evaluate(async () => {
+    const c = document.createElement('canvas'); c.width = 2400; c.height = 1200;
+    const x = c.getContext('2d'); x.fillStyle = '#c33'; x.fillRect(0, 0, 2400, 1200); x.fillStyle = '#39c'; x.fillRect(300, 300, 900, 500);
+    const b = await new Promise(r => c.toBlob(r, 'image/png'));
+    return Array.from(new Uint8Array(await b.arrayBuffer()));
+  }));
+  const medRows = [['Board', 'Kategorie', 'Punkte', 'Frage', 'Antwort', 'Medium']];
+  [1, 2, 3, 4, 5].forEach(k => VALUES.forEach((p, j) => medRows.push([k === 1 && j === 0 ? 'Medien-Board' : '', j === 0 ? `M${k}` : '', String(p), `Frage M${k}/${p}`, `Antwort ${p}`,
+    k === 1 && p === 100 ? 'BILD.PNG' : k === 2 && p === 300 ? 'ton.wav' : k === 3 && p === 500 ? 'film.mp4' : ''])));
+  const medTSV = medRows.map(r => r.join('\t')).join('\n');
+  const mImport = async (text, mediaFiles) => {
+    await page.click('#ownb-import');
+    await page.fill('#bimp-text', text);
+    if (mediaFiles && mediaFiles.length) await page.setInputFiles('#bimp-media', mediaFiles);
+    await page.click('#bimp-run');
+    await page.waitForFunction(() => !document.querySelector('#bimp-run') || document.querySelector('#bimp-err').textContent, null, { timeout: 15000 });
+    const err = await page.isVisible('#bimp-err') ? await page.textContent('#bimp-err') : '';
+    if (err) await page.click('[data-act="modal-close"]');
+    return err;
+  };
+  bErr = await mImport(medTSV);
+  assert(bErr.includes('Board „Medien-Board“, Kategorie „M1“, 100 Punkte: Die Mediendatei „BILD.PNG“ fehlt'), 'Ohne die Dateien: Fehler nennt die Stelle und die Datei: ' + bErr);
+  bErr = await mImport(medTSV, [{ name: 'bild.png', mimeType: 'image/png', buffer: bigPng }, { name: 'ton.wav', mimeType: 'audio/wav', buffer: Buffer.from('das ist keine wav-datei!!') }, { name: 'film.mp4', mimeType: 'video/mp4', buffer: mp4Buf() }]);
+  assert(bErr.includes('„ton.wav“ hat kein erlaubtes Format') && bErr.includes('Kategorie „M2“, 300 Punkte'), 'Datei mit falschem Inhalt wird abgelehnt: ' + bErr);
+  assert((await idbKeys()).length === 0 && (await ownB()).length === 4, 'Nach dem Fehler bleibt nichts im Speicher zurück');
+  bErr = await mImport(medTSV.replace('film.mp4', 'film.mov'), [{ name: 'bild.png', mimeType: 'image/png', buffer: bigPng }, { name: 'ton.wav', mimeType: 'audio/wav', buffer: wavBuf() }]);
+  assert(bErr.includes('„film.mov“ fehlt'), 'Fehlende dritte Datei wird gemeldet: ' + bErr);
+  bErr = await mImport(medTSV, [{ name: 'bild.png', mimeType: 'image/png', buffer: bigPng }, { name: 'ton.wav', mimeType: 'audio/wav', buffer: wavBuf() }, { name: 'film.mp4', mimeType: 'video/mp4', buffer: mp4Buf() }]);
+  ob = await ownB();
+  const mb0 = ob.find(b => b.name === 'Medien-Board');
+  assert(!bErr && mb0, 'Board mit Medien importiert ' + bErr);
+  assert(mb0.cats[0].qs[0].m.t === 'bild' && mb0.cats[1].qs[2].m.t === 'audio' && mb0.cats[2].qs[4].m.t === 'video' && !mb0.cats[0].qs[1].m, 'Verweise bei den richtigen Fragen: ' + JSON.stringify(mb0.cats[0].qs[0].m));
+  assert((await idbKeys()).length === 3, 'Drei Dateien im Speicher des Browsers');
+  const dim = await page.evaluate(k => new Promise((res, rej) => {
+    const r = indexedDB.open('quizabend-medien', 1);
+    r.onsuccess = () => { const q = r.result.transaction('d').objectStore('d').get(k); q.onsuccess = async () => { const bmp = await createImageBitmap(q.result); res([bmp.width, bmp.height, q.result.type]); }; };
+    r.onerror = () => rej(r.error);
+  }), mb0.cats[0].qs[0].m.k);
+  assert(dim[0] === 1600 && dim[1] === 800, 'Großes Bild wird auf 1600 Pixel verkleinert: ' + dim);
+  assert((await page.textContent('.oblist')).includes('3 Medien'), 'Board-Liste nennt die Anzahl der Medien');
+  // Spielen: nur das Medien-Board
+  for (const b of ob.filter(b => b.on && b.name !== 'Medien-Board')) await page.click(`#ownb-${b.id}`);
+  while (!(await page.isDisabled('#b-minus'))) await page.click('#b-minus');
+  await page.click('#start'); await page.waitForSelector('.board');
+  s = await state(page);
+  assert(s.boards.length === 1 && s.boards[0].cats[0].qs[0].m.t === 'bild' && s.boards[0].cats[1].qs[2].m.t === 'audio', 'Im Spiel tragen die Fragen ihre Verweise');
+  await page.click('#tile-0-0');
+  await page.waitForSelector('#media-slot img[src^="blob:"]');
+  await page.waitForFunction(() => { const i = document.querySelector('#media-slot img'); return i && i.complete && i.naturalWidth > 0; });
+  assert(true, 'Bild wird angezeigt');
+  await page.screenshot({ path: `${SHOTS}/74-medien-bild.png` });
+  await page.evaluate(() => { window.__mimg = document.querySelector('#media-slot img'); });
+  await page.click('#q-wrong');
+  assert(await page.evaluate(() => document.querySelector('#media-slot img') === window.__mimg), 'Beim Neuzeichnen bleibt es dasselbe Bild-Element');
+  await page.click('#q-nobody');
+  assert(await page.isVisible('#media-slot img'), 'Nach der Auflösung steht das Bild noch da');
+  await page.click('#q-next');
+  assert(await page.$('.qmedia') === null, 'Zurück auf dem Board ist das Medium weg');
+  await page.click('#tile-1-2');
+  await page.waitForSelector('#media-slot audio[src^="blob:"]');
+  await page.waitForFunction(() => document.querySelector('#media-slot audio').duration > 0.5, null, { timeout: 5000 });
+  assert(true, 'Audio ist geladen (Dauer erkannt)');
+  await page.click('#q-right'); await page.click('#q-next');
+  await page.click('#tile-2-4');
+  await page.waitForSelector('#media-slot video[src^="blob:"]');
+  assert(true, 'Video-Element erscheint');
+  await page.click('#t-menu'); await page.click('[data-act="new-setup-ask"]'); await page.click('[data-act="modal-ok"]');
+  await page.click(`#ownb-del-${mb0.id}`); await page.click('[data-act="modal-ok"]');
+  await page.waitForFunction(() => !document.querySelector('.oblist') || !document.querySelector('.oblist').textContent.includes('Medien-Board'));
+  await page.waitForTimeout(300);
+  assert((await idbKeys()).length === 0, 'Board löschen räumt auch die Dateien auf');
   // Seite mit Vorlagen: alle Downloads sind da
   const help = await ctx.newPage(); watch(help, 'boards');
   await help.goto(BASE.replace(/index\.html$/, 'boards.html'));

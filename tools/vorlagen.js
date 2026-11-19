@@ -98,11 +98,11 @@ function xlsx(sheets) {
 }
 
 /* Blatt „Board“: eine Zeile pro Frage. Board-Name und Kategorie reichen in der ersten Zeile, darunter gelten sie weiter. */
-const HEAD = ['Board', 'Kategorie', 'Punkte', 'Frage', 'Antwort'].map(v => ({ v, s: 1 }));
+const HEAD = ['Board', 'Kategorie', 'Punkte', 'Frage', 'Antwort', 'Medium'].map(v => ({ v, s: 1 }));
 function boardRows(boards) {
   const rows = [HEAD];
   for (const b of boards) b.cats.forEach((c, ci) => c.qs.forEach((q, r) => rows.push([
-    ci === 0 && r === 0 ? { v: b.name, s: 3 } : '', r === 0 ? { v: c.name, s: 3 } : '', { v: VALUES[r], s: 5 }, { v: q.q, s: 2 }, { v: q.a, s: 2 }])));
+    ci === 0 && r === 0 ? { v: b.name, s: 3 } : '', r === 0 ? { v: c.name, s: 3 } : '', { v: VALUES[r], s: 5 }, { v: q.q, s: 2 }, { v: q.a, s: 2 }, '']))); 
   return rows;
 }
 const HELP = [
@@ -114,6 +114,8 @@ const HELP = [
   ['3. Punkte: 100 ist leicht, 500 ist schwer. Die Reihenfolge der Zeilen ist egal, das Spiel sortiert nach Punkten.'],
   ['4. Antworten kurz halten. Andere Schreibweisen in Klammern dahinter, zum Beispiel: Der Pazifik (Pazifischer Ozean).'],
   ['5. Mehrere Boards in einer Datei: einfach weitere 25 Zeilen darunter, mit neuem Board-Namen in der ersten Zeile.'],
+  ['6. Medium (freiwillig): Dateiname eines Bildes, Liedes oder Videos zur Frage, zum Beispiel lied1.mp3. Die Dateien wählst du beim Import unter „Mediendateien“ aus.'],
+  ['    Erlaubt sind Bilder (PNG, JPEG, WebP, GIF) bis 5 MB, Audio (MP3, OGG, WAV, M4A) bis 50 MB und Videos (MP4 oder WebM) bis 500 MB.'],
   [''],
   ['So kommt das Board ins Spiel'],
   ['Im Quizabend auf der Startseite bei „Eigene Boards“ auf „Board importieren“ klicken und diese Datei wählen.'],
@@ -123,7 +125,7 @@ const HELP = [
   ['Spiel und Anleitung: https://keimjoan.github.io/quizabend/']
 ];
 const helpSheet = { name: 'Anleitung', xml: sheetXML(HELP, { widths: [120] }) };
-const boardSheet = boards => ({ name: 'Board', xml: sheetXML(boardRows(boards), { widths: [22, 24, 9, 60, 34], freeze: true }) });
+const boardSheet = boards => ({ name: 'Board', xml: sheetXML(boardRows(boards), { widths: [22, 24, 9, 60, 34, 22], freeze: true }) });
 
 /* ---------- Inhalte ---------- */
 function builtin() {

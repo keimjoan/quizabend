@@ -139,13 +139,13 @@ footer { color: var(--ink-dim); font-size: 15px; display: flex; flex-wrap: wrap;
       <p>Im Blatt <b>Board</b> steht eine Zeile pro Frage, also 25 Zeilen für ein Board. Die Kopfzeile bleibt, wie sie ist.</p>
       <div class="tablewrap">
         <table>
-          <thead><tr><th>Board</th><th>Kategorie</th><th>Punkte</th><th>Frage</th><th>Antwort</th></tr></thead>
+          <thead><tr><th>Board</th><th>Kategorie</th><th>Punkte</th><th>Frage</th><th>Antwort</th><th>Medium</th></tr></thead>
           <tbody>
-            <tr><td class="k">Geburtstag Lisa</td><td class="k">Lisa privat</td><td class="n">100</td><td>In welcher Stadt ist Lisa aufgewachsen?</td><td>Bremen</td></tr>
-            <tr><td></td><td></td><td class="n">200</td><td>Wie heißt Lisas Katze?</td><td>Mimi</td></tr>
-            <tr><td colspan="5" class="more">… bis 500 Punkte, dann die nächste Kategorie …</td></tr>
-            <tr><td></td><td class="k">Unsere Urlaube</td><td class="n">100</td><td>Auf welcher Insel waren wir 2019?</td><td>Mallorca</td></tr>
-            <tr><td colspan="5" class="more">… insgesamt fünf Kategorien mit je fünf Fragen</td></tr>
+            <tr><td class="k">Geburtstag Lisa</td><td class="k">Lisa privat</td><td class="n">100</td><td>In welcher Stadt ist Lisa aufgewachsen?</td><td>Bremen</td><td></td></tr>
+            <tr><td></td><td></td><td class="n">200</td><td>Wie heißt Lisas Katze?</td><td>Mimi</td><td>katze.jpg</td></tr>
+            <tr><td colspan="6" class="more">… bis 500 Punkte, dann die nächste Kategorie …</td></tr>
+            <tr><td></td><td class="k">Unsere Urlaube</td><td class="n">100</td><td>Auf welcher Insel waren wir 2019?</td><td>Mallorca</td><td></td></tr>
+            <tr><td colspan="6" class="more">… insgesamt fünf Kategorien mit je fünf Fragen</td></tr>
           </tbody>
         </table>
       </div>
@@ -154,6 +154,7 @@ footer { color: var(--ink-dim); font-size: 15px; display: flex; flex-wrap: wrap;
         <li><b>Punkte</b> 100, 200, 300, 400, 500: von leicht nach schwer. Die Reihenfolge der Zeilen ist egal, das Spiel sortiert selbst.</li>
         <li><b>Antworten</b> kurz halten. Andere Schreibweisen in Klammern dahinter, zum Beispiel „Der Pazifik (Pazifischer Ozean)“.</li>
         <li><b>Mehrere Boards</b> in einer Datei: weitere 25 Zeilen darunter, mit neuem Board-Namen in der ersten Zeile. Sie werden in dieser Reihenfolge gespielt.</li>
+        <li><b>Medium</b> (freiwillig): der Dateiname eines Bildes, Liedes oder Videos zur Frage, zum Beispiel „katze.jpg“. Die Dateien wählst du beim Import aus, siehe Schritt 4.</li>
         <li>Statt Excel geht auch eine CSV-Datei mit denselben Spalten (Komma, Semikolon oder Tabulator).</li>
       </ul>
     </div>
@@ -191,10 +192,11 @@ footer { color: var(--ink-dim); font-size: 15px; display: flex; flex-wrap: wrap;
       <ol class="steps">
         <li><p>Öffne das Spiel. Auf der Startseite steht der Bereich <b>Eigene Boards</b>, im Online-Spiel in der Lobby beim Gastgeber.</p></li>
         <li><p>Klicke auf <b>Board importieren</b> und wähle die Datei: Excel (.xlsx), CSV oder die JSON-Datei von Claude. Oder markiere die Zellen in Excel bzw. Google Sheets samt Kopfzeile, kopiere sie und füge sie ins Feld ein.</p></li>
+        <li><p>Hast du Dateien in der Spalte „Medium“ eingetragen, wähle sie unter <b>Mediendateien</b> aus (mehrere auf einmal geht). Erlaubt sind Bilder (PNG, JPEG, WebP, GIF) bis 5 MB, Audio (MP3, OGG, WAV, M4A) bis 50 MB und Videos als MP4 oder WebM bis 500 MB. Ein großes Bild verkleinert das Spiel selbst. Eine MOV- oder MKV-Datei wandelst du vorher in MP4 um.</p></li>
         <li><p>Klicke auf <b>Importieren</b>. Fehlt etwas, sagt das Spiel genau, wo, zum Beispiel „Kategorie Sport, 300 Punkte: Die Antwort fehlt“.</p></li>
         <li><p>Ausgewählte eigene Boards werden zuerst gespielt. Mit „Boards“ unten auf der Seite stellst du ein, ob danach noch zufällige Boards aus den eingebauten Kategorien kommen.</p></li>
       </ol>
-      <p class="hint">Eigene Boards werden nur in deinem Browser gespeichert. Auf einem anderen Gerät importierst du sie einfach noch einmal. Im Online-Spiel reicht es, wenn der Gastgeber das Board hat: Die Mitspieler sehen die Fragen automatisch.</p>
+      <p class="hint">Eigene Boards werden nur in deinem Browser gespeichert. Auf einem anderen Gerät importierst du sie einfach noch einmal. Im Online-Spiel reicht es, wenn der Gastgeber das Board hat: Die Mitspieler sehen die Fragen automatisch. Die Mediendateien bleiben ebenfalls in deinem Browser. Online lädt der Gastgeber sie nur für die laufende Runde auf den Raum-Server hoch, sobald die Lobby offen ist (bei großen Videos dauert das einige Minuten), und löscht sie am Ende der Runde wieder. Ein Bildschirm braucht dafür kein Internet.</p>
     </div>
   </section>
 
@@ -223,7 +225,7 @@ footer { color: var(--ink-dim); font-size: 15px; display: flex; flex-wrap: wrap;
         {
           "name": "Kategorie 1",
           "fragen": [
-            { "punkte": 100, "frage": "Leichte Frage?", "antwort": "Antwort" },
+            { "punkte": 100, "frage": "Leichte Frage?", "antwort": "Antwort", "medium": "bild.jpg" },
             { "punkte": 200, "frage": "…", "antwort": "…" },
             { "punkte": 300, "frage": "…", "antwort": "…" },
             { "punkte": 400, "frage": "…", "antwort": "…" },
@@ -234,6 +236,7 @@ footer { color: var(--ink-dim); font-size: 15px; display: flex; flex-wrap: wrap;
     }
   ]
 }</pre>
+      <p class="hint">Das Feld <code>medium</code> ist freiwillig und nennt nur den Dateinamen. Die Datei wählst du beim Import aus.</p>
       <p class="hint">Einzelne Kategorien statt ganzer Boards importierst du auf der Startseite über „Eigene Fragen schreiben“. Die landen dann im Topf, aus dem die Boards zufällig gezogen werden.</p>
     </div>
   </section>

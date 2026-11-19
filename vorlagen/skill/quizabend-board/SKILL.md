@@ -55,6 +55,7 @@ Erzeuge eine Datei `quizabend-boards.json` (wenn du Dateien erstellen kannst, so
 
 - Jedes Board hat genau 5 Kategorien, jede Kategorie genau 5 Fragen mit den Punkten 100, 200, 300, 400 und 500.
 - Mehrere Boards stehen nacheinander in der Liste `boards`. Im Spiel werden sie in dieser Reihenfolge gespielt.
+- Optional: Hat der Nutzer Bild-, Audio- oder Videodateien zu Fragen, trägst du ihren Dateinamen als `"medium": "lied1.mp3"` in die Frage ein (nur Namen, die der Nutzer genannt hat, keine Links). Er wählt die Dateien beim Import unter „Mediendateien“ aus. Ohne Dateien lässt du das Feld weg.
 - Gültiges JSON: doppelte Anführungszeichen, keine Kommentare, kein Komma nach dem letzten Eintrag. Anführungszeichen im Text als „…“ schreiben oder mit `\"` maskieren.
 
 ## Danach

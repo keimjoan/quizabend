@@ -316,6 +316,14 @@ button.tile:focus-visible { outline-color: var(--turn); }
 .qbody { display: grid; align-content: center; gap: clamp(14px, 2.4vmin, 28px); min-height: 0; }
 .qtext { font-weight: 700; font-size: clamp(24px, 5.1vmin, 70px); line-height: 1.16; max-width: 24em; text-wrap: balance; }
 .qcard.online .qtext { font-size: clamp(22px, 4.2vmin, 58px); }
+.mslot:empty { display: none; }
+.qmedia { display: grid; justify-items: center; gap: 10px; }
+.qmedia img, .qmedia video { display: block; max-width: 100%; max-height: min(46vh, 60vmin); border-radius: 12px; background: #000; object-fit: contain; box-shadow: 0 3px 0 rgba(0,0,0,.4); }
+.qmedia audio { width: min(100%, 38em); }
+.qmedia .mnote { margin: 0; }
+.mu { display: grid; gap: 8px; padding: 12px 14px; border-radius: 12px; background: rgba(255,255,255,.04); box-shadow: inset 0 0 0 1px rgba(255,255,255,.12); }
+.mu .mbar { height: 8px; border-radius: 6px; background: rgba(255,255,255,.12); overflow: hidden; }
+.mu .mbar i { display: block; height: 100%; width: 0; background: var(--brass); transition: width .2s; }
 .answer { display: grid; gap: 4px; justify-self: start; max-width: 100%; padding: clamp(12px, 2vmin, 22px) clamp(16px, 2.6vmin, 28px); border-radius: 14px; background: rgba(227,176,75,.12); box-shadow: inset 0 0 0 2px rgba(227,176,75,.75); }
 .answer .lbl { color: var(--brass); font-weight: 700; font-size: clamp(14px, 1.8vmin, 20px); }
 .answer .val { font-family: var(--font-display); font-weight: 900; font-size: clamp(30px, 6vmin, 80px); line-height: 1.02; letter-spacing: .01em; overflow-wrap: anywhere; }
@@ -651,6 +659,8 @@ const COLORS = [
 const OCOLORS = ['#ff6352', '#56b6ff', '#ffd447', '#b994ff', '#ff9f43', '#ff79bd', '#5fe3c0', '#c6f05a', '#ffb3a7', '#a9d4ff', '#f0c8ff', '#e8dcc0'];
 const KEYS = ['a', 'l', 'q', 'p', 'g', 'b'];
 const VALUES = [100, 200, 300, 400, 500];
+/* Punkte einer Kachel: ab dem zweiten Board doppelt, wenn das eingestellt ist */
+const pts = (r, bi, dbl) => VALUES[r] * (dbl && bi >= 1 ? 2 : 1);
 const MAX_TEAMS = 6, O_MAX = 12, BUZZ_MS = 20000, VOTE_MS = 30000, JUDGE_MS = 30000, KI_MS = 25000;
 const K = { prefs: 'quizabend.prefs.v1', custom: 'quizabend.custom.v1', game: 'quizabend.game.v1', played: 'quizabend.played.v1', me: 'quizabend.me.v1', online: 'quizabend.online.v1', room: 'quizabend.room.v1', ki: 'quizabend.ki.v1', boards: 'quizabend.boards.v1' };
 
@@ -753,8 +763,8 @@ let savedOnline = null;
 
 function defaultPrefs() {
   return {
-    teams: [{ name: '', color: 0, key: 'a' }, { name: '', color: 1, key: 'l' }], boards: 2, timer: 0, penalty: true, sound: true, off: [],
-    tab: HAS_ROOM ? 'online' : 'local', oset: { mode: 'solo', nt: 2, tn: ['', '', '', '', '', ''], timer: 60, pen: true, ki: false, km: 'opus', mod: false }
+    teams: [{ name: '', color: 0, key: 'a' }, { name: '', color: 1, key: 'l' }], boards: 2, timer: 0, penalty: true, dbl: false, sound: true, off: [],
+    tab: HAS_ROOM ? 'online' : 'local', oset: { mode: 'solo', nt: 2, tn: ['', '', '', '', '', ''], timer: 60, pen: true, ki: false, km: 'opus', mod: false, dbl: false }
   };
 }
 function loadPrefs() {
@@ -770,6 +780,7 @@ function loadPrefs() {
     boards: Number.isInteger(p.boards) ? clamp(p.boards, 1, 40) : d.boards,
     timer: [0, 15, 30, 60].includes(p.timer) ? p.timer : 0,
     penalty: p.penalty !== false,
+    dbl: p.dbl === true,
     sound: p.sound !== false,
     off: Array.isArray(p.off) ? p.off.filter(x => typeof x === 'string') : [],
     tab: p.tab === 'local' || !HAS_ROOM ? 'local' : 'online',
@@ -781,7 +792,8 @@ function loadPrefs() {
       pen: os.pen !== false,
       ki: os.ki === true,
       km: os.km === 'haiku' ? 'haiku' : 'opus',
-      mod: os.mod === true && os.ki !== true
+      mod: os.mod === true && os.ki !== true,
+      dbl: os.dbl === true
     }
   };
 }
@@ -846,7 +858,7 @@ function apply(g, a) {
     case 'pick':
       if (d.phase !== 'board' || !inRange(a.c) || !inRange(a.r) || d.res[d.bi][a.c][a.r] !== null) return false;
       d.phase = 'question';
-      d.cur = { c: a.c, r: a.r, v: VALUES[a.r], st: 'answer', ans: d.turn, att: [], win: null, log: [], tEnd: timerEnd(g) };
+      d.cur = { c: a.c, r: a.r, v: pts(a.r, d.bi, g.settings.dbl), st: 'answer', ans: d.turn, att: [], win: null, log: [], tEnd: timerEnd(g) };
       return true;
     case 'cancel':
       if (d.phase !== 'question' || cur.st !== 'answer' || cur.log.length) return false;
@@ -930,7 +942,7 @@ function startGame() {
   const labels = prefs.teams.map(teamLabel);
   game = {
     id: rid(12),
-    settings: { timer: prefs.timer, penalty: prefs.penalty },
+    settings: { timer: prefs.timer, penalty: prefs.penalty, dbl: prefs.dbl },
     teams: prefs.teams.map((t, i) => {
       const dup = labels.slice(0, i).filter(l => l === labels[i]).length;
       return { name: dup ? `${labels[i]} ${dup + 1}` : labels[i], color: COLORS[t.color].hex, key: t.key };
@@ -996,6 +1008,7 @@ function postRender() {
     const pref = ui.mode === 'game' ? ($('#q-next') || $('#nb')) : ui.mode === 'online' ? $('#o-ans-in') : null;
     if (pref && !pref.disabled) pref.focus({ preventScroll: true });
   }
+  mediaDraw();
   camSync();
   tickTimer();
 }
@@ -1066,6 +1079,13 @@ function localSetupHTML() {
               <button id="pen-0" data-act="penalty" data-v="0" aria-pressed="${!prefs.penalty}">Kein Abzug</button>
             </div>
           </div>
+          ${boards >= 2 ? `<div class="opt"><span class="opt-label" id="lbl-dbl">Punkte ab dem zweiten Board</span>
+            <div class="seg" role="group" aria-labelledby="lbl-dbl">
+              <button id="dbl-0" data-act="dbl" data-v="0" aria-pressed="${!prefs.dbl}">Normal</button>
+              <button id="dbl-1" data-act="dbl" data-v="1" aria-pressed="${prefs.dbl}">Doppelt</button>
+            </div>
+            <p class="hint">Doppelt: Jede Frage zählt 200 bis 1000 Punkte, auch beim Abzug.</p>
+          </div>` : ''}
           <div class="opt"><span class="opt-label" id="lbl-snd">Töne</span>
             <div class="seg" role="group" aria-labelledby="lbl-snd">
               <button id="snd-1" data-act="sound" data-v="1" aria-pressed="${prefs.sound}">An</button>
@@ -1158,6 +1178,7 @@ function helpBody(k) {
       <li>Ist die Antwort richtig, bekommt das Team die Punkte. Ist sie falsch, wird die Hälfte abgezogen.</li>
       <li>Nach einer falschen Antwort dürfen die anderen Teams buzzern, jedes einmal. Wer zuerst seine Taste drückt, antwortet. Eine falsche Antwort nach dem Buzzern kostet auch die Hälfte, das lässt sich in den Optionen abschalten.</li>
       <li>Danach ist die Frage verbraucht und das nächste Team ist dran. Ist das Board leer, kommt das nächste.</li>
+      <li>Bei mehr als einem Board lässt sich in den Optionen einstellen, dass ab dem zweiten Board alle Fragen doppelt zählen (200 bis 1000 Punkte, der Abzug auch).</li>
     </ol>
     <h3>Die Spielleitung</h3>
     <p>Eine Person liest die Fragen vor und klickt auf Richtig oder Falsch. Die Lösung sieht sie, solange sie „Lösung spicken“ gedrückt hält.<span id="phone-hint">${phoneHint()}</span></p>
@@ -1166,6 +1187,7 @@ function helpBody(k) {
       <li>Wer das Spiel eröffnet, ist Gastgeber und schickt den anderen den Raum-Link. Alle melden sich mit ihrem Namen an und treten bei, bis zu 12 Leute. Gespielt wird jeder für sich oder in Teams.</li>
       <li>Wer am Zug ist, wählt eine Frage und tippt die Antwort ein. „Weiß ich nicht“ oder Zeitablauf zählt als falsch.</li>
       <li>Richtig gibt die vollen Punkte. Falsch kostet die Hälfte, dann dürfen die anderen buzzern, jeder einmal. Wer zuerst drückt, antwortet.</li>
+      <li>Der Gastgeber kann in der Lobby einstellen, dass ab dem zweiten Board alle Fragen doppelt zählen.</li>
     </ol>
     <h3>Wer entscheidet, ob eine Antwort stimmt</h3>
     <p>Das stellt der Gastgeber in der Lobby unter „Wertung der Antworten“ ein:</p>
@@ -1174,7 +1196,8 @@ function helpBody(k) {
       <li><b>Ich moderiere:</b> Der Gastgeber sieht die Lösungen, entscheidet per Klick über jede Antwort und spielt selbst nicht mit.</li>
       <li><b>KI-Spielleiter:</b> Claude vergleicht jede Antwort mit der Musterlösung. Dafür braucht der Gastgeber einen eigenen Claude-API-Schlüssel, siehe die Anleitung im Menü.</li>
     </ul>
-    <p class="hint">Jeder kann in der Lobby oder während des Spiels seine Kamera einschalten. Die Bilder gehen direkt von Browser zu Browser, ohne Ton.</p>`;
+    <p class="hint">Jeder kann in der Lobby oder während des Spiels seine Kamera einschalten. Die Bilder gehen direkt von Browser zu Browser, ohne Ton.</p>
+    <p class="hint">Hat eine Frage ein Bild, Lied oder Video, sehen und hören es alle bei der Frage. Der Gastgeber lädt die Dateien in der Lobby nur für diese Runde hoch und löscht sie am Ende wieder.</p>`;
   if (k === 'ki') return `<p>Mit dem KI-Spielleiter prüft Claude jede getippte Antwort gegen die Musterlösung. Richtig gibt sofort die Punkte, Selbstbewertung und Abstimmung entfallen. Nur der Gastgeber braucht dafür einen Claude-API-Schlüssel und zahlt die Runde, die Mitspieler brauchen nichts.</p>
     <h3>So bekommst du einen Schlüssel</h3>
     <ol class="rules">
@@ -1193,8 +1216,8 @@ function helpBody(k) {
     <p class="hint">Der Schlüssel bleibt in deinem Browser und geht nur an Anthropic. Mitspieler und der Raum-Server bekommen ihn nie. In der Claude Console kannst du ein Ausgabenlimit setzen und den Schlüssel jederzeit löschen. Antwortet die KI einmal nicht, wird diese Antwort nach den normalen Regeln gewertet.</p>`;
   return `<ol class="rules">
       <li><b>Vorlage holen:</b> Auf der Seite <a href="boards.html" target="_blank" rel="noopener">Eigene Boards</a> gibt es eine Excel-Vorlage, eine Google-Sheets-Vorlage zum Kopieren und ein Beispiel. Dort liegt auch ein Claude-Skill, der dir Boards zu jedem Thema schreibt.</li>
-      <li><b>Ausfüllen:</b> Die Spalten heißen Board, Kategorie, Punkte, Frage, Antwort. Board und Kategorie reichen in der ersten Zeile, sie gelten nach unten weiter. Jedes Board braucht genau fünf Kategorien mit je fünf Fragen von 100 bis 500 Punkten.</li>
-      <li><b>Importieren:</b> Auf der Startseite oder als Gastgeber in der Lobby unter „Eigene Boards“ auf „Board importieren“ klicken. Eine Datei wählen (Excel, CSV oder JSON) oder in Excel bzw. Google Sheets die Zellen samt Kopfzeile kopieren und einfügen.</li>
+      <li><b>Ausfüllen:</b> Die Spalten heißen Board, Kategorie, Punkte, Frage, Antwort und freiwillig Medium (Dateiname eines Bildes, Liedes oder Videos). Board und Kategorie reichen in der ersten Zeile, sie gelten nach unten weiter. Jedes Board braucht genau fünf Kategorien mit je fünf Fragen von 100 bis 500 Punkten.</li>
+      <li><b>Importieren:</b> Auf der Startseite oder als Gastgeber in der Lobby unter „Eigene Boards“ auf „Board importieren“ klicken. Eine Datei wählen (Excel, CSV oder JSON) oder in Excel bzw. Google Sheets die Zellen samt Kopfzeile kopieren und einfügen. Die Dateien aus der Spalte Medium wählst du dort unter „Mediendateien“ aus.</li>
       <li><b>Spielen:</b> Ausgewählte eigene Boards kommen zuerst dran, in ihrer Reihenfolge. Danach werden Boards aus den Kategorien gezogen.</li>
     </ol>
     <p class="hint">Stimmt etwas nicht, nennt die Fehlermeldung die Stelle. Die Boards bleiben in diesem Browser gespeichert, bis zu 30 Stück.</p>`;
@@ -1275,13 +1298,14 @@ function topbarHTML() {
 }
 function boardHTML() {
   const g = game, d = g.dyn, b = g.boards[d.bi], res = d.res[d.bi];
+  const P = r => pts(r, d.bi, g.settings.dbl);
   let h = `<div class="board" aria-label="Board ${d.bi + 1}">`;
   h += b.cats.map(c => `<div class="cat">${esc(c.name)}</div>`).join('');
   for (let r = 0; r < 5; r++) for (let c = 0; c < 5; c++) {
     const x = res[c][r], cn = esc(b.cats[c].name);
-    if (x === null) h += `<button class="tile" id="tile-${c}-${r}" data-act="pick" data-c="${c}" data-r="${r}" aria-label="${cn} für ${VALUES[r]} Punkte">${VALUES[r]}</button>`;
-    else if (x >= 0) { const t = g.teams[x]; h += `<div class="tile taken" style="--c:${t.color}" title="${cn} ${VALUES[r]}: ${esc(t.name)}"><span>${esc(short(t.name))}</span></div>`; }
-    else h += `<div class="tile void" title="${cn} ${VALUES[r]}: niemand">–</div>`;
+    if (x === null) h += `<button class="tile" id="tile-${c}-${r}" data-act="pick" data-c="${c}" data-r="${r}" aria-label="${cn} für ${P(r)} Punkte">${P(r)}</button>`;
+    else if (x >= 0) { const t = g.teams[x]; h += `<div class="tile taken" style="--c:${t.color}" title="${cn} ${P(r)}: ${esc(t.name)}"><span>${esc(short(t.name))}</span></div>`; }
+    else h += `<div class="tile void" title="${cn} ${P(r)}: niemand">–</div>`;
   }
   return h + '</div>';
 }
@@ -1295,7 +1319,7 @@ function logHTML(log, teams) {
 function questionHTML() {
   const g = game, d = g.dyn, cur = d.cur, cat = g.boards[d.bi].cats[cur.c], q = cat.qs[cur.r];
   const half = Math.round(cur.v / 2);
-  let who = '', body = `<p class="qtext">${esc(q.q)}</p>`, foot = '';
+  let who = '', body = `<p class="qtext">${esc(q.q)}</p>${cleanM(q.m) ? '<div class="mslot" id="media-slot"></div>' : ''}`, foot = '';
   if (cur.st === 'answer' || cur.st === 'buzzAnswer') {
     const t = g.teams[cur.ans];
     const pen = (cur.st === 'answer' || g.settings.penalty) ? half : 0;
@@ -1448,7 +1472,7 @@ function loadBoards() {
   if (!Array.isArray(list)) return;
   ownBoards = list.filter(b => b && typeof b.id === 'string' && Array.isArray(b.cats) && b.cats.length === 5).slice(0, OWN_MAX).map(b => ({
     id: b.id, name: String(b.name || 'Eigenes Board').slice(0, 40), on: b.on !== false,
-    cats: b.cats.map(c => ({ name: String((c && c.name) || '').slice(0, 60), qs: VALUES.map((_, r) => ({ q: String((c && c.qs && c.qs[r] && c.qs[r].q) || ''), a: String((c && c.qs && c.qs[r] && c.qs[r].a) || '') })) }))
+    cats: b.cats.map(c => ({ name: String((c && c.name) || '').slice(0, 60), qs: VALUES.map((_, r) => { const x = (c && c.qs && c.qs[r]) || {}, m = cleanM(x.m); return Object.assign({ q: String(x.q || ''), a: String(x.a || '') }, m ? { m } : {}); }) }))
   }));
 }
 const saveBoards = () => store.set(K.boards, ownBoards);
@@ -1462,7 +1486,7 @@ function gameBoards(want) {
   const own = selBoards(), r = boardRange();
   if (!r.ok) return null;
   const nB = clamp(want, r.min, r.max), nR = nB - own.length;
-  return own.map(b => ({ cats: b.cats.map(c => ({ name: c.name, qs: c.qs.map(x => ({ q: x.q, a: x.a })) })) }))
+  return own.map(b => ({ cats: b.cats.map(c => ({ name: c.name, qs: c.qs.map(x => x.m ? { q: x.q, a: x.a, m: { ...x.m } } : { q: x.q, a: x.a }) })) }))
     .concat(nR > 0 ? makeBoards(pickCats(selectedCats(), nR * 5), nR) : []);
 }
 function boardsHint(boards, r) {
@@ -1475,7 +1499,7 @@ function boardsPanelHTML() {
   return `<div class="panel-head"><h2 id="h-own">Eigene Boards</h2>${ownBoards.length ? `<span class="hint">${sel} von ${ownBoards.length} ausgewählt</span>` : ''}</div>
     ${ownBoards.length ? `<div class="oblist">${ownBoards.map(b => `<div class="obrow">
       <button class="chip" id="ownb-${esc(b.id)}" data-act="ownb-toggle" data-id="${esc(b.id)}" aria-pressed="${b.on}">${esc(b.name)}</button>
-      <span class="hint obcats">${esc(b.cats.map(c => c.name).join(', '))}</span>
+      <span class="hint obcats">${esc(b.cats.map(c => c.name).join(', '))}${boardMedia(b).length ? ` · ${boardMedia(b).length} ${boardMedia(b).length === 1 ? 'Medium' : 'Medien'}` : ''}</span>
       <button class="icon-btn" id="ownb-del-${esc(b.id)}" data-act="ownb-del" data-id="${esc(b.id)}" aria-label="Board ${esc(b.name)} löschen" title="Board löschen">${icon('x')}</button>
     </div>`).join('')}</div>` : '<p class="hint">Noch kein eigenes Board. Fülle die Vorlage für Excel oder Google Sheets aus oder lass dir eins von Claude schreiben und importiere es hier.</p>'}
     <div class="row-btns">
@@ -1490,20 +1514,22 @@ function openBoardImport() {
     <p class="hint">Wähle eine ausgefüllte Vorlage (Excel, CSV oder die JSON-Datei vom Claude-Skill). Oder markiere in Excel oder Google Sheets die Zellen samt Kopfzeile, kopiere sie und füge sie unten ein. <a href="boards.html" target="_blank" rel="noopener">Vorlagen und Anleitung</a></p>
     <div class="field"><label for="bimp-file">Datei wählen</label><input id="bimp-file" type="file" accept=".xlsx,.csv,.tsv,.txt,.json,application/json,text/csv,text/plain,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"></div>
     <div class="field"><label for="bimp-text">Oder hier einfügen</label><textarea class="text-in code" id="bimp-text" rows="8" spellcheck="false" placeholder="Board, Kategorie, Punkte, Frage, Antwort"></textarea></div>
+    <div class="field"><label for="bimp-media">Mediendateien (optional)</label><input id="bimp-media" type="file" multiple accept="image/png,image/jpeg,image/webp,image/gif,audio/mpeg,audio/ogg,audio/wav,audio/mp4,video/mp4,video/webm,.mp3,.ogg,.wav,.m4a,.mp4,.webm,.png,.jpg,.jpeg,.webp,.gif">
+      <span class="hint">Bilder, Audio und Videos, deren Dateinamen in der Spalte „Medium“ stehen. Bilder bis 5 MB, Audiodateien bis 50 MB, Videos bis 500 MB (MP4 oder WebM). Online lädt der Gastgeber sie nur für die laufende Runde hoch.</span></div>
     <p class="err" id="bimp-err" role="alert"></p>
     <div class="actions"><button class="btn btn-plain" data-act="modal-close">Abbrechen</button><button class="btn btn-brass" id="bimp-run" data-act="bimp-run">Importieren</button></div>`, 'wide');
 }
 
 /* Eine Kategorie aus JSON: Name und fünf Fragen, nach Punkten sortiert (auch für „Eigene Fragen“) */
-function catFromJSON(c, label) {
+function catFromJSON(c, label, media) {
   const name = String((c && (c.name || c.kategorie || c.title)) || '').trim();
   let qs = c && (c.fragen || c.questions || c.qs);
   if (!name || !Array.isArray(qs) || qs.length < 5) throw new Error(`${label}${name ? ` („${name}“)` : ''} braucht einen Namen und fünf Fragen.`);
   qs = qs.map(x => Array.isArray(x)
     ? { q: String(x[0] || ''), a: String(x[1] || ''), p: NaN }
-    : { q: String((x && (x.frage || x.question || x.q)) || ''), a: String((x && (x.antwort || x.answer || x.a)) || ''), p: Number(x && (x.punkte || x.points)) });
+    : { q: String((x && (x.frage || x.question || x.q)) || ''), a: String((x && (x.antwort || x.answer || x.a)) || ''), p: Number(x && (x.punkte || x.points)), m: String((x && (x.medium || x.media || x.datei)) || '').trim() });
   if (qs.every(x => Number.isFinite(x.p))) qs.sort((a, b) => a.p - b.p);
-  return { name: name.slice(0, 60), qs: qs.slice(0, 5).map(x => ({ q: x.q.trim().slice(0, 400), a: x.a.trim().slice(0, 200) })) };
+  return { name: name.slice(0, 60), qs: qs.slice(0, 5).map(x => Object.assign({ q: x.q.trim().slice(0, 400), a: x.a.trim().slice(0, 200) }, media && x.m ? { m: x.m.slice(0, 120) } : {})) };
 }
 function parseBoards(text, fallback) {
   const t = String(text || '').replace(/^﻿/, '').trim();
@@ -1522,7 +1548,7 @@ function parseBoards(text, fallback) {
       const name = String((b && (b.name || b.titel || b.title)) || '').trim() || (list.length > 1 ? `${base} ${k + 1}` : base);
       const cats = b && (b.kategorien || b.categories || b.cats);
       if (!Array.isArray(cats)) throw new Error(`Board „${name}“ hat keine Kategorien.`);
-      return { name, cats: cats.map((c, ci) => catFromJSON(c, `Board „${name}“, Kategorie ${ci + 1}`)) };
+      return { name, cats: cats.map((c, ci) => catFromJSON(c, `Board „${name}“, Kategorie ${ci + 1}`, true)) };
     });
   } else boards = boardsFromTable(parseTable(t), base);
   if (boards.length > OWN_MAX) throw new Error(`Höchstens ${OWN_MAX} Boards auf einmal.`);
@@ -1558,7 +1584,7 @@ function boardsFromTable(rows, base) {
   const hi = rows.findIndex(r => { const k = r.map(key); return k.some(x => x.startsWith('kategorie') || x === 'category') && k.some(x => x.startsWith('frage') || x === 'question'); });
   if (hi < 0) throw new Error('Keine Kopfzeile gefunden. Die Tabelle braucht die Spalten Kategorie, Punkte, Frage und Antwort, so wie in der Vorlage.');
   const h = rows[hi].map(key), at = (...n) => h.findIndex(x => n.some(y => x.startsWith(y)));
-  const cB = at('board'), cK = at('kategorie', 'category'), cP = at('punkte', 'punkt', 'wert', 'points'), cF = at('frage', 'question'), cA = at('antwort', 'losung', 'answer');
+  const cB = at('board'), cK = at('kategorie', 'category'), cP = at('punkte', 'punkt', 'wert', 'points'), cF = at('frage', 'question'), cA = at('antwort', 'losung', 'answer'), cM = at('medium', 'medien', 'datei', 'media');
   if (cA < 0) throw new Error('Die Spalte Antwort fehlt.');
   const boards = [];
   let curB = base, curK = '';
@@ -1572,14 +1598,14 @@ function boardsFromTable(rows, base) {
     if (!b) boards.push(b = { name: curB, cats: [] });
     let c = b.cats.find(x => x.name === curK);
     if (!c) b.cats.push(c = { name: curK, qs: [] });
-    c.qs.push({ p: Number(g(cP).replace(/[^\d-]/g, '') || NaN), q: g(cF).slice(0, 400), a: g(cA).slice(0, 200) });
+    c.qs.push({ p: Number(g(cP).replace(/[^\d-]/g, '') || NaN), q: g(cF).slice(0, 400), a: g(cA).slice(0, 200), m: g(cM).slice(0, 120) });
   }
   if (!boards.length) throw new Error('Keine Fragen gefunden. Unter der Kopfzeile steht eine Zeile pro Frage.');
   for (const b of boards) for (const c of b.cats) {
     if (c.qs.length !== 5) throw new Error(`Board „${b.name}“, Kategorie „${c.name}“ hat ${c.qs.length} ${c.qs.length === 1 ? 'Frage' : 'Fragen'}. Gebraucht werden genau fünf.`);
     if (c.qs.every(x => Number.isFinite(x.p))) c.qs.sort((x, y) => x.p - y.p);
     c.name = c.name.slice(0, 60);
-    c.qs = c.qs.map(x => ({ q: x.q, a: x.a }));
+    c.qs = c.qs.map(x => Object.assign({ q: x.q, a: x.a }, x.m ? { m: x.m } : {}));
   }
   return boards;
 }
@@ -1649,17 +1675,272 @@ async function readBoardFile(file) {
     if (err) err.textContent = '';
   } catch (ex) { if (err) err.textContent = ex.message || 'Die Datei ließ sich nicht lesen.'; }
 }
-function importBoards() {
-  const ta = $('#bimp-text'), err = $('#bimp-err');
+let bimpBusy = false;
+async function importBoards() {
+  const ta = $('#bimp-text'), err = $('#bimp-err'), btn = $('#bimp-run'), fresh = new Set();
+  if (bimpBusy) return false;
   try {
     const list = parseBoards(ta.value, bimpName);
     if (ownBoards.length + list.length > OWN_MAX) throw new Error(`Es passen höchstens ${OWN_MAX} eigene Boards. Lösche vorher alte.`);
+    const files = Array.from(($('#bimp-media') || {}).files || []);
+    bimpBusy = true;
+    if (btn) { btn.disabled = true; btn.textContent = 'Wird importiert …'; }
+    await attachMedia(list, files, fresh);
     ownBoards.push(...list); saveBoards();
     closeModal();
     toast(list.length === 1 ? `Board „${list[0].name}“ importiert` : `${list.length} Boards importiert`);
     return true;
-  } catch (ex) { err.textContent = ex.message; return false; }
+  } catch (ex) { mediaDropUnused(fresh); if (err && err.isConnected) err.textContent = ex.message; return false; }
+  finally { bimpBusy = false; if (btn && btn.isConnected) { btn.disabled = false; btn.textContent = 'Importieren'; } }
 }
+
+/* ---------- Medien: Bild, Audio, Video zu Fragen ----------
+   Beim Import einer Tabelle wählt man die Dateien aus (Spalte „Medium“ nennt den Dateinamen). Sie liegen im Browser (IndexedDB),
+   das Board speichert nur Verweise {t: bild|audio|video, f: Dateiname, k: Schlüssel}. Ein Bildschirm: Wiedergabe von dort.
+   Online lädt der Gastgeber die Dateien nur für die laufende Runde auf den Raum-Server (Upload in Teilen, server/worker.js)
+   und löscht sie am Rundenende wieder. Die Ansicht trägt nur bei der geöffneten Frage [Typ, ID]. */
+const MEDIA_URL = String(('QUIZ_MEDIA_URL' in window ? window.QUIZ_MEDIA_URL : ROOM_URL.replace(/^ws/, 'http')) || '').replace(/\/+$/, '');
+const MIB = 1048576, MEDIA_PART = 20 * MIB;
+const MEDIA_MAX = { bild: 5 * MIB, audio: 50 * MIB, video: 500 * MIB };
+const MEDIA_MAXTXT = { bild: 'Bilder bis 5 MB', audio: 'Audiodateien bis 50 MB', video: 'Videos bis 500 MB' };
+const MEDIA_TYPES = ['bild', 'audio', 'video'];
+const MEDIA_ID = /^[a-z0-9]{24}$/;
+const mb = n => { const x = n / MIB; return (x < 10 ? x.toFixed(1) : String(Math.round(x))).replace('.', ','); };
+const cleanM = m => m && typeof m === 'object' && MEDIA_TYPES.includes(m.t) && typeof m.k === 'string' && m.k && m.k.length < 300
+  ? { t: m.t, f: String(m.f || '').slice(0, 80), k: m.k } : null;
+
+/* Dateityp am Anfang der Datei erkennen (gleiche Regeln wie auf dem Server) */
+function mediaSniff(b) {
+  if (b.length < 12) return null;
+  const s = (i, t) => [...t].every((c, k) => b[i + k] === c.charCodeAt(0));
+  if (b[0] === 0x89 && s(1, 'PNG')) return { t: 'bild', ct: 'image/png' };
+  if (b[0] === 0xFF && b[1] === 0xD8 && b[2] === 0xFF) return { t: 'bild', ct: 'image/jpeg' };
+  if (s(0, 'GIF87a') || s(0, 'GIF89a')) return { t: 'bild', ct: 'image/gif' };
+  if (s(0, 'RIFF') && s(8, 'WEBP')) return { t: 'bild', ct: 'image/webp' };
+  if (s(0, 'RIFF') && s(8, 'WAVE')) return { t: 'audio', ct: 'audio/wav' };
+  if (s(0, 'OggS')) return { t: 'audio', ct: 'audio/ogg' };
+  if (s(0, 'ID3') || (b[0] === 0xFF && (b[1] & 0xE0) === 0xE0 && (b[1] & 0x18) !== 0x08 && (b[1] & 0x06) !== 0)) return { t: 'audio', ct: 'audio/mpeg' };
+  if (b[0] === 0x1A && b[1] === 0x45 && b[2] === 0xDF && b[3] === 0xA3) return { t: 'video', ct: 'video/webm' };
+  if (s(4, 'ftyp')) {
+    const brand = String.fromCharCode(b[8], b[9], b[10], b[11]);
+    if (brand === 'M4A ' || brand === 'M4B ') return { t: 'audio', ct: 'audio/mp4' };
+    if (['isom', 'iso2', 'iso4', 'iso5', 'iso6', 'mp41', 'mp42', 'avc1', 'dash', 'M4V ', 'mmp4'].includes(brand)) return { t: 'video', ct: 'video/mp4' };
+  }
+  return null;
+}
+
+/* Dateien im Browser (IndexedDB) */
+let mdbP = null;
+function mdb() {
+  return mdbP || (mdbP = new Promise((res, rej) => {
+    if (!window.indexedDB) { rej(new Error('Dieser Browser kann keine Dateien speichern.')); return; }
+    const r = indexedDB.open('quizabend-medien', 1);
+    r.onupgradeneeded = () => r.result.createObjectStore('d');
+    r.onsuccess = () => res(r.result);
+    r.onerror = () => rej(r.error || new Error('Der Dateispeicher des Browsers ist nicht erreichbar.'));
+  }).catch(e => { mdbP = null; throw e; }));
+}
+const mdbDo = (mode, fn) => mdb().then(db => new Promise((res, rej) => {
+  const tx = db.transaction('d', mode), rq = fn(tx.objectStore('d'));
+  tx.oncomplete = () => res(rq && rq.result);
+  tx.onerror = tx.onabort = () => rej(tx.error || new Error('Der Dateispeicher des Browsers meldet einen Fehler.'));
+}));
+const mdbPut = (k, blob) => mdbDo('readwrite', s => s.put(blob, k));
+const mdbGet = k => mdbDo('readonly', s => s.get(k));
+const mdbDel = k => mdbDo('readwrite', s => s.delete(k));
+const boardMedia = b => b.cats.flatMap(c => c.qs.filter(x => x.m).map(x => x.m));
+/* Dateien löschen, die kein eigenes Board mehr braucht */
+function mediaDropUnused(keys) {
+  const used = new Set(ownBoards.flatMap(b => boardMedia(b).map(m => m.k)));
+  for (const k of new Set(keys)) if (!used.has(k)) mdbDel(k).catch(() => {});
+}
+
+/* Bilder auf höchstens 1600 Pixel verkleinern (spart Platz und Upload). GIFs bleiben, wie sie sind. */
+async function shrinkImage(file, kind) {
+  const plain = () => file.slice(0, file.size, kind.ct);
+  if (kind.ct === 'image/gif' || typeof createImageBitmap !== 'function') return plain();
+  try {
+    const bmp = await createImageBitmap(file);
+    const s = Math.min(1, 1600 / Math.max(bmp.width, bmp.height));
+    if (s === 1 && file.size <= 2 * MIB) { bmp.close(); return plain(); }
+    const cv = document.createElement('canvas');
+    cv.width = Math.max(1, Math.round(bmp.width * s)); cv.height = Math.max(1, Math.round(bmp.height * s));
+    const cx = cv.getContext('2d');
+    cx.fillStyle = '#fff'; cx.fillRect(0, 0, cv.width, cv.height); cx.drawImage(bmp, 0, 0, cv.width, cv.height); bmp.close();
+    const out = await new Promise(res => cv.toBlob(res, 'image/jpeg', 0.86));
+    return out && (s < 1 || out.size < file.size) ? out : plain();
+  } catch (e) { return plain(); }
+}
+async function storeMedia(file, where) {
+  const kind = mediaSniff(new Uint8Array(await file.slice(0, 16).arrayBuffer()));
+  if (!kind) throw new Error(`${where}: „${file.name}“ hat kein erlaubtes Format. Erlaubt sind Bilder (PNG, JPEG, WebP, GIF), Audio (MP3, OGG, WAV, M4A) und Videos als MP4 oder WebM. Eine MOV- oder MKV-Datei wandelst du vorher in MP4 um.`);
+  const blob = kind.t === 'bild' ? await shrinkImage(file, kind) : file.slice(0, file.size, kind.ct);
+  if (blob.size > MEDIA_MAX[kind.t]) throw new Error(`${where}: „${file.name}“ ist ${mb(blob.size)} MB groß. Erlaubt sind ${MEDIA_MAXTXT[kind.t]}.`);
+  const k = `${file.name}|${file.size}|${file.lastModified}`;
+  try { await mdbPut(k, blob); } catch (e) { throw new Error(`${where}: „${file.name}“ passt nicht mehr in den Speicher dieses Browsers (${(e && e.message) || 'Fehler'}).`); }
+  return { t: kind.t, f: file.name.slice(0, 80), k };
+}
+/* Löst die Dateinamen aus der Spalte „Medium“ gegen die ausgewählten Dateien auf */
+async function attachMedia(list, files, fresh) {
+  const byName = new Map(files.map(f => [f.name.toLowerCase(), f])), done = new Map();
+  for (const b of list) for (const c of b.cats) for (let r = 0; r < 5; r++) {
+    const x = c.qs[r];
+    if (!x.m) continue;
+    const where = `Board „${b.name}“, Kategorie „${c.name}“, ${VALUES[r]} Punkte`, raw = String(x.m), name = raw.replace(/^.*[\\/]/, '').toLowerCase();
+    if (/^[a-z]+:\/\//i.test(raw)) throw new Error(`${where}: Links gehen nicht. Schreib den Dateinamen in die Spalte Medium und wähle die Datei unter „Mediendateien“ aus.`);
+    let ref = done.get(name);
+    if (!ref) {
+      const f = byName.get(name);
+      if (!f) throw new Error(`${where}: Die Mediendatei „${raw}“ fehlt. Wähle sie unter „Mediendateien“ aus.`);
+      ref = await storeMedia(f, where); fresh.add(ref.k); done.set(name, ref);
+    }
+    x.m = { ...ref };
+  }
+}
+
+/* Anzeige: ein festes Element, das nach jedem Neuzeichnen in #media-slot wandert, damit Ton und Video weiterlaufen */
+let mediaEl = null, mediaKey = '', mediaObj = '';
+function mediaWant() {
+  if (ui.mode === 'game' && game && game.dyn.phase === 'question' && game.dyn.cur) {
+    const d = game.dyn, cur = d.cur, q = game.boards[d.bi].cats[cur.c].qs[cur.r], m = cleanM(q.m);
+    return m ? { key: `l:${d.bi}:${cur.c}:${cur.r}:${m.k}`, t: m.t, k: m.k } : null;
+  }
+  const c = ui.mode === 'online' && on.view && on.view.cur;
+  if (c && Array.isArray(c.m) && MEDIA_TYPES.includes(c.m[0])) return { key: `o:${c.qn}:${c.m[1]}`, t: c.m[0], id: String(c.m[1] || '') };
+  return null;
+}
+function mediaNode(t, url) {
+  const el = document.createElement(t === 'bild' ? 'img' : t === 'audio' ? 'audio' : 'video');
+  if (t === 'bild') { el.alt = 'Bild zur Frage'; el.decoding = 'async'; el.referrerPolicy = 'no-referrer'; }
+  else { el.controls = true; el.preload = t === 'audio' ? 'auto' : 'metadata'; if (t === 'video') el.playsInline = true; el.setAttribute('aria-label', t === 'audio' ? 'Audio zur Frage' : 'Video zur Frage'); }
+  el.src = url;
+  return el;
+}
+function mediaDraw() {
+  const want = mediaWant(), slot = want ? document.getElementById('media-slot') : null;
+  if (!want || !slot) {
+    if (mediaEl) { mediaEl.remove(); mediaEl.textContent = ''; }
+    mediaKey = '';
+    if (mediaObj) { URL.revokeObjectURL(mediaObj); mediaObj = ''; }
+    return;
+  }
+  if (!mediaEl) { mediaEl = document.createElement('div'); mediaEl.className = 'qmedia'; }
+  if (mediaKey !== want.key) {
+    mediaKey = want.key; mediaEl.textContent = '';
+    if (mediaObj) { URL.revokeObjectURL(mediaObj); mediaObj = ''; }
+    const note = txt => { if (mediaKey !== want.key) return; mediaEl.textContent = ''; const p = document.createElement('p'); p.className = 'hint mnote'; p.textContent = txt; mediaEl.appendChild(p); };
+    const place = url => { if (mediaKey === want.key) { mediaEl.textContent = ''; mediaEl.appendChild(mediaNode(want.t, url)); } };
+    if (want.k !== undefined) {
+      mdbGet(want.k).then(blob => {
+        if (mediaKey !== want.key) return;
+        if (!blob) note('Die Mediendatei fehlt auf diesem Gerät. Importiere das Board noch einmal.');
+        else place(mediaObj = URL.createObjectURL(blob));
+      }).catch(e => note((e && e.message) || 'Die Mediendatei ließ sich nicht laden.'));
+    } else if (MEDIA_ID.test(want.id) && MEDIA_URL) place(`${MEDIA_URL}/medien/${want.id}`);
+    else note(want.id ? 'Dieses Gerät kann das Medium nicht laden.' : 'Zu dieser Frage gibt es kein Medium (es wurde nicht hochgeladen).');
+  }
+  if (mediaEl.parentNode !== slot) slot.appendChild(mediaEl);
+}
+
+/* Upload für die laufende Runde (Gastgeber) */
+const mu = { gen: 0, st: 'idle', bytes: 0, total: 0, files: 0, done: 0, err: '', skip: false };
+const mediaKeys = () => new Map(selBoards().flatMap(boardMedia).map(m => [m.k, m]));
+function muBlocking() {
+  const g = on.og;
+  if (!g || mu.skip || !MEDIA_URL) return false;
+  return [...mediaKeys().keys()].some(k => !(g.media && g.media[k]));
+}
+function mediaCleanupList(list) {
+  if (!list.length || !MEDIA_URL) return;
+  try { fetch(`${MEDIA_URL}/medien-loeschen`, { method: 'POST', body: JSON.stringify(list), headers: { 'Content-Type': 'text/plain' }, keepalive: true }).catch(() => {}); } catch (e) { /* egal */ }
+}
+function mediaCleanup(g) {
+  if (!g || !g.media) return;
+  mediaCleanupList(Object.values(g.media).map(x => [x[0], x[1]]));
+  g.media = {};
+}
+async function mediaUploadOne(blob, gen) {
+  const size = blob.size, count = Math.ceil(size / MEDIA_PART);
+  const send = async (method, path, body, ctype) => {
+    for (let i = 0; ; i++) {
+      try {
+        const r = await fetch(MEDIA_URL + path, { method, body, headers: { 'Content-Type': ctype || 'application/octet-stream' } });
+        const j = await r.json().catch(() => ({}));
+        if (r.ok) return j;
+        if (r.status < 500 || i >= 2) throw new Error(j.fehler || `Der Server hat das Hochladen abgelehnt (${r.status}).`);
+      } catch (e) { if (e.name !== 'TypeError' || i >= 2) throw e; }
+      await new Promise(r => setTimeout(r, 1500));
+    }
+  };
+  const first = await send('POST', `/medien/${roomCode()}?size=${size}`, blob.slice(0, Math.min(size, MEDIA_PART)));
+  mu.bytes += Math.min(size, MEDIA_PART); muProgress();
+  if (first.done) return first;
+  const parts = [{ n: 1, etag: first.etag }];
+  let next = 2, dead = false;
+  const worker = async () => {
+    while (next <= count && !dead && gen === mu.gen) {
+      const n = next++, from = (n - 1) * MEDIA_PART, to = Math.min(size, n * MEDIA_PART);
+      try { const j = await send('PUT', `/medien/${first.id}/${n}?del=${first.del}`, blob.slice(from, to)); parts.push({ n, etag: j.etag }); mu.bytes += to - from; muProgress(); }
+      catch (e) { dead = true; throw e; }
+    }
+  };
+  try {
+    await Promise.all([worker(), worker(), worker()]);
+    if (gen !== mu.gen) throw new Error('abgebrochen');
+    await send('POST', `/medien/${first.id}/fertig`, JSON.stringify({ del: first.del, parts }), 'application/json');
+  } catch (e) { mediaCleanupList([[first.id, first.del]]); throw e; }
+  return first;
+}
+function muProgress() {
+  const f = document.getElementById('mu-fill'), t = document.getElementById('mu-txt');
+  if (f) f.style.width = (mu.total ? Math.min(100, Math.round(mu.bytes / mu.total * 100)) : 0) + '%';
+  if (t) t.textContent = muText();
+}
+const muText = () => `Medien werden hochgeladen: ${mb(mu.bytes)} von ${mb(mu.total)} MB, ${mu.done} von ${mu.files} Dateien fertig`;
+/* Startet den Upload, sobald ausgewählte eigene Boards Medien haben, die noch nicht auf dem Server liegen */
+function muSync() {
+  const g = on.og;
+  if (on.role !== 'host' || !g || g.ph !== 'lobby' || !MEDIA_URL || mu.st !== 'idle' || mu.skip) return;
+  const need = [...mediaKeys().values()].filter(m => !(g.media && g.media[m.k]));
+  if (need.length) muRun(g, need);
+}
+async function muRun(g, need) {
+  const gen = ++mu.gen;
+  Object.assign(mu, { st: 'up', err: '', bytes: 0, total: 0, files: need.length, done: 0 });
+  try {
+    const blobs = [];
+    for (const m of need) {
+      const b = await mdbGet(m.k);
+      if (!b) throw new Error(`Die Datei „${m.f}“ fehlt auf diesem Gerät. Importiere das Board noch einmal.`);
+      blobs.push([m, b]); mu.total += b.size;
+    }
+    muProgress();
+    for (const [m, b] of blobs) {
+      if (gen !== mu.gen) return;
+      const r = await mediaUploadOne(b, gen);
+      if (gen !== mu.gen) { mediaCleanupList([[r.id, r.del]]); return; }
+      (g.media = g.media || {})[m.k] = [r.id, r.del, r.t];
+      mu.done++;
+      store.set(K.online, g);
+    }
+    mu.st = 'idle';
+  } catch (e) {
+    if (gen !== mu.gen) return;
+    mu.st = 'err'; mu.err = (e && e.message) || 'Das Hochladen hat nicht geklappt.';
+  }
+  if (on.og === g) oBump();
+}
+function muHTML() {
+  const keys = mediaKeys();
+  if (!keys.size) return '';
+  const g = on.og, miss = [...keys.keys()].filter(k => !(g.media && g.media[k])).length;
+  if (!MEDIA_URL) return '<p class="hint" id="mu-note">Medien gehen nur mit dem eigenen Raum-Server. Das Spiel startet ohne Medien.</p>';
+  if (mu.st === 'up') return `<div class="mu" id="mu"><div class="mbar"><i id="mu-fill" style="width:${mu.total ? Math.min(100, Math.round(mu.bytes / mu.total * 100)) : 0}%"></i></div><span class="hint" id="mu-txt" role="status">${esc(muText())}</span></div>`;
+  if (mu.st === 'err') return `<div class="mu"><p class="err" id="mu-err" role="alert">${esc(mu.err)}</p><div class="row-btns"><button class="btn btn-plain btn-sm" id="mu-retry" data-act="mu-retry">Erneut versuchen</button><button class="btn btn-plain btn-sm" id="mu-skip" data-act="mu-skip">Ohne Medien starten</button></div></div>`;
+  if (miss && !mu.skip) return '<p class="hint" id="mu-note">Die Medien werden gleich hochgeladen.</p>';
+  return `<p class="hint" id="mu-note">${mu.skip && miss ? 'Das Spiel startet ohne Medien.' : 'Alle Medien sind hochgeladen. Sie werden nach der Runde vom Server gelöscht.'}</p>`;
+}
+
 
 /* ---------- Dialoge & Hinweise ---------- */
 let modalOk = null, modalReturn = null;
@@ -1832,12 +2113,13 @@ function oCreate() {
   if (!roomNs) return;
   me.name = name; saveMe();
   const s = prefs.oset;
+  mediaCleanup(savedOnline); mu.gen++; Object.assign(mu, { st: 'idle', skip: false });
   Object.assign(on, { role: 'host', gid: 'g' + rid(10), view: null, draft: '', sent: '', myVote: null, myCounter: null, err: '', stale: false });
   on.og = {
     id: on.gid, host: me.pid, v: 0, ph: 'lobby',
-    set: { mode: s.mode, nt: s.nt, tn: s.tn.slice(0, 6), boards: prefs.boards, timer: s.timer, pen: s.pen, ki: !!s.ki, km: s.km === 'haiku' ? 'haiku' : 'opus', mod: !!s.mod && !s.ki },
+    set: { mode: s.mode, nt: s.nt, tn: s.tn.slice(0, 6), boards: prefs.boards, timer: s.timer, pen: s.pen, dbl: !!s.dbl, ki: !!s.ki, km: s.km === 'haiku' ? 'haiku' : 'opus', mod: !!s.mod && !s.ki },
     pl: [{ id: me.pid, n: name, slot: null, t: null, on: true, offAt: null }],
-    teams: [], boards: [], sc: [], bi: 0, turn: 0, res: [], qn: 0, cur: null
+    teams: [], boards: [], sc: [], bi: 0, turn: 0, res: [], qn: 0, cur: null, media: {}
   };
   savedOnline = null; lastScores = null; ui.mode = 'online';
   window.scrollTo(0, 0);
@@ -1855,8 +2137,10 @@ function oResume(g) {
 }
 function oBump() {
   const g = on.og; if (!g) return;
+  if (g.ph === 'gameEnd') mediaCleanup(g);
   g.v++;
   store.set(K.online, g);
+  muSync();
   const prev = on.view;
   on.view = oView(true); on.at = Date.now();
   oPrepareFlip(prev, on.view);
@@ -1868,7 +2152,7 @@ function oView(local) {
   const sel = selectedCats();
   const v = {
     id: g.id, ver: g.v, ph: g.ph, host: g.host, qn: g.qn,
-    set: { mode: g.set.mode, nt: g.set.nt, tn: g.set.tn.slice(0, g.set.nt), boards: g.set.boards, timer: g.set.timer, pen: g.set.pen, ki: g.set.ki ? 1 : 0, mod: g.set.mod ? 1 : 0, km: g.set.km === 'haiku' ? 'haiku' : 'opus', nc: sel.length, no: selBoards().length },
+    set: { mode: g.set.mode, nt: g.set.nt, tn: g.set.tn.slice(0, g.set.nt), boards: g.set.boards, timer: g.set.timer, pen: g.set.pen, dbl: g.set.dbl ? 1 : 0, ki: g.set.ki ? 1 : 0, mod: g.set.mod ? 1 : 0, km: g.set.km === 'haiku' ? 'haiku' : 'opus', nc: sel.length, no: selBoards().length },
     pl: g.pl.map(p => [p.id, p.n, g.ph === 'lobby' ? p.slot : p.t, p.on ? 1 : 0])
   };
   if (g.ph !== 'lobby' && g.boards.length) {
@@ -1878,7 +2162,7 @@ function oView(local) {
       const c = g.cur, q = b.cats[c.c].qs[c.r];
       const team = (c.st === 'vote' || c.st === 'judge') && c.ans[c.vi] ? c.ans[c.vi].t : null;
       v.cur = {
-        qn: c.qn, c: c.c, r: c.r, v: c.v, st: c.st, q: q.q, at: c.at, br: c.br,
+        qn: c.qn, c: c.c, r: c.r, v: c.v, st: c.st, q: q.q, m: q.m ? [q.m.t, (g.media && g.media[q.m.k] && g.media[q.m.k][0]) || ''] : undefined, at: c.at, br: c.br,
         tl: c.dl ? Math.max(0, c.dl - Date.now()) : null,
         tt: c.st === 'answer' ? g.set.timer : c.st === 'judge' ? JUDGE_MS / 1000 : c.st === 'buzz' ? BUZZ_MS / 1000 : c.st === 'vote' ? VOTE_MS / 1000 : 0,
         ans: c.ans.map(a => [a.t, a.x, a.cl === null ? null : (a.cl ? 1 : 0), a.v === null ? null : (a.v ? 1 : 0), a.y, a.n, a.p, a.ki ? (c.st === 'resolved' ? a.k || '' : '') : null]),
@@ -1913,7 +2197,7 @@ function oNotPermitted() {
 function oOpen(c, r) {
   const g = on.og;
   g.qn++; g.ph = 'question';
-  g.cur = { qn: g.qn, c, r, v: VALUES[r], st: 'answer', at: g.turn, dl: Date.now() + g.set.timer * 1000, ans: [], att: [], br: 0, pas: [], vi: -1, votes: {}, win: null, log: [] };
+  g.cur = { qn: g.qn, c, r, v: pts(r, g.bi, g.set.dbl), st: 'answer', at: g.turn, dl: Date.now() + g.set.timer * 1000, ans: [], att: [], br: 0, pas: [], vi: -1, votes: {}, win: null, log: [] };
 }
 function oSubmit(pid, text) {
   const cur = on.og.cur;
@@ -2070,16 +2354,18 @@ function oSet(k, val) {
   else if (k === 'boards') { const r = boardRange(); s.boards = clamp(clamp(s.boards, r.min, r.max) + val, r.min, r.max); prefs.boards = s.boards; }
   else if (k === 'timer') s.timer = [30, 60, 90].includes(val) ? val : 60;
   else if (k === 'pen') s.pen = !!val;
+  else if (k === 'dbl') s.dbl = !!val;
   else if (k === 'wert') { s.ki = val === 'ki'; s.mod = val === 'mod'; }
   else if (k === 'km') { s.km = val === 'haiku' ? 'haiku' : 'opus'; kiErr = ''; }
   g.pl.forEach(p => { if (p.slot != null && p.slot >= s.nt) p.slot = null; });
-  prefs.oset = { mode: s.mode, nt: s.nt, tn: s.tn.slice(0, 6), timer: s.timer, pen: s.pen, ki: !!s.ki, km: s.km === 'haiku' ? 'haiku' : 'opus', mod: !!s.mod }; savePrefs();
+  prefs.oset = { mode: s.mode, nt: s.nt, tn: s.tn.slice(0, 6), timer: s.timer, pen: s.pen, dbl: !!s.dbl, ki: !!s.ki, km: s.km === 'haiku' ? 'haiku' : 'opus', mod: !!s.mod }; savePrefs();
   oBump();
 }
 function oStartGame() {
   const g = on.og; if (!g) return;
   if (!boardRange().ok) { toast('Wähle mindestens fünf Kategorien oder ein eigenes Board aus.'); return; }
   if (g.pl.length < 2) { toast('Es braucht mindestens zwei Spieler.'); return; }
+  if (muBlocking()) { toast('Die Medien werden noch hochgeladen. Du kannst auch ohne Medien starten.'); return; }
   if (g.set.ki && !kiKey) { toast('Trage zuerst deinen API-Schlüssel ein oder wähle „Selbst bewerten und abstimmen“.'); return; }
   const plays = p => !(g.set.mod && p.id === g.host);
   let teams;
@@ -2107,6 +2393,7 @@ function oStartGame() {
 }
 function oBackToLobby() {
   const g = on.og; if (!g) return;
+  mediaCleanup(g); mu.skip = false;
   Object.assign(g, { ph: 'lobby', teams: [], boards: [], res: [], sc: [], bi: 0, turn: 0, cur: null });
   g.pl.forEach(p => { p.t = null; });
   oBump();
@@ -2467,7 +2754,7 @@ function oJoin(gid) {
   roomNs.presence(Object.assign({ role: 'oplayer', game: gid, pid: me.pid, name, label: null, ph: null, np: null, pids: null, info: null }, INPUT_KEYS)).catch(() => {});
 }
 function oLeave() {
-  if (on.role === 'host') store.set(K.online, null);
+  if (on.role === 'host') { mediaCleanup(on.og); mu.gen++; Object.assign(mu, { st: 'idle', skip: false }); store.set(K.online, null); }
   const wasPlayer = on.role === 'player';
   Object.assign(on, { role: null, gid: null, og: null, view: null, at: 0, tEnd: null, draft: '', sent: '', myVote: null, myCounter: null, stale: false });
   ui.mode = 'setup'; prefs.tab = 'online'; savePrefs();
@@ -2559,7 +2846,7 @@ function oLobbyHTML(v) {
   }
   const no = s.no || 0, all = no + Math.floor((s.nc || 0) / 5), br = { own: no, ok: all >= 1, min: Math.max(1, no), max: Math.max(1, all) };
   const maxB = br.max, boards = clamp(s.boards, br.min, br.max);
-  const enough = pl.length >= 2 && br.ok;
+  const enough = pl.length >= 2 && br.ok && !muBlocking();
   const startbar = isHost ? `<div class="startbar">
       <div class="boards-pick">
         <span class="opt-label" id="lbl-oboards">Boards</span>
@@ -2568,7 +2855,7 @@ function oLobbyHTML(v) {
           <span class="stepper-val">${flaps(boards)}<span class="sr" aria-live="polite">${boards} ${boards === 1 ? 'Board' : 'Boards'}</span></span>
           <button class="icon-btn" id="ob-plus" data-act="o-set" data-k="boards" data-v="1" ${boards >= maxB ? 'disabled' : ''} aria-label="Ein Board mehr">${icon('plus')}</button>
         </div>
-        <span class="hint">${!br.ok ? boardsHint(boards, br) : pl.length >= 2 ? `${boardsHint(boards, br)} Alle Spieler sind bereit?` : 'Warte, bis mindestens ein Mitspieler beigetreten ist.'}</span>
+        <span class="hint">${!br.ok ? boardsHint(boards, br) : isHost && muBlocking() ? 'Warte, bis die Medien hochgeladen sind.' : pl.length >= 2 ? `${boardsHint(boards, br)} Alle Spieler sind bereit?` : 'Warte, bis mindestens ein Mitspieler beigetreten ist.'}</span>
       </div>
       <button class="btn btn-brass btn-lg" id="o-start" data-act="o-start" ${enough ? '' : 'disabled'}>Spiel starten</button>
     </div>` : `<div class="startbar"><p>Warte, bis ${esc(hostP ? hostP[1] : 'der Gastgeber')} das Spiel startet.</p></div>`;
@@ -2586,7 +2873,7 @@ function oLobbyHTML(v) {
   </main>`;
 }
 function oHostSettingsHTML() {
-  const s = on.og.set;
+  const s = on.og.set, nb = (r => clamp(s.boards, r.min, r.max))(boardRange());
   return `<h2 id="h-oset">Einstellungen</h2>
     <div class="opt"><span class="opt-label" id="lbl-omode">Spielweise</span>
       <div class="seg" role="group" aria-labelledby="lbl-omode">
@@ -2608,6 +2895,12 @@ function oHostSettingsHTML() {
         <button id="op-1" data-act="o-set" data-k="pen" data-v="1" aria-pressed="${s.pen}">Halbe Punkte abziehen</button>
         <button id="op-0" data-act="o-set" data-k="pen" data-v="0" aria-pressed="${!s.pen}">Kein Abzug</button>
       </div></div>
+    ${nb >= 2 ? `<div class="opt"><span class="opt-label" id="lbl-odbl">Punkte ab dem zweiten Board</span>
+      <div class="seg" role="group" aria-labelledby="lbl-odbl">
+        <button id="od-0" data-act="o-set" data-k="dbl" data-v="0" aria-pressed="${!s.dbl}">Normal</button>
+        <button id="od-1" data-act="o-set" data-k="dbl" data-v="1" aria-pressed="${!!s.dbl}">Doppelt</button>
+      </div>
+      <p class="hint">Doppelt: Jede Frage zählt 200 bis 1000 Punkte, auch beim Abzug.</p></div>` : ''}
     <div class="opt"><span class="opt-label" id="lbl-oki">Wertung der Antworten</span>
       <div class="seg" role="group" aria-labelledby="lbl-oki">
         <button id="oki-0" data-act="o-set" data-k="wert" data-v="vote" aria-pressed="${!s.ki && !s.mod}">Selbst bewerten und abstimmen</button>
@@ -2620,6 +2913,7 @@ function oHostSettingsHTML() {
       <p class="hint" id="okm-note">${esc((KI_MODELS[s.km] || KI_MODELS.opus).note)}</p>
       ${kiBoxHTML()}` : ''}</div>
     ${boardsPanelHTML()}
+    ${muHTML()}
     ${catsPanelHTML()}`;
 }
 function oSummaryHTML(v) {
@@ -2630,6 +2924,7 @@ function oSummaryHTML(v) {
       <li>Boards: <b>${Math.max(s.boards, s.no || 0)}</b> mit je 25 Fragen${s.no ? `, ${s.no === 1 ? 'ein eigenes kommt' : `${s.no} eigene kommen`} zuerst` : ''}</li>
       <li>Zeit zum Antworten: <b>${s.timer} Sekunden</b></li>
       <li>Falsche Antwort nach dem Buzzern: <b>${s.pen ? 'halbe Punkte Abzug' : 'kein Abzug'}</b></li>
+      ${s.dbl && Math.max(s.boards, s.no || 0) >= 2 ? '<li>Punkte ab dem zweiten Board: <b>doppelt</b></li>' : ''}
       <li>Wertung der Antworten: <b>${s.ki ? `KI-Spielleiter (${esc((KI_MODELS[s.km] || KI_MODELS.opus).name)})` : s.mod ? 'der Gastgeber moderiert und spielt nicht mit' : 'selbst bewerten und abstimmen'}</b></li>
     </ul>
     <p class="hint">Die Einstellungen legt der Gastgeber fest.</p>`;
@@ -2665,14 +2960,15 @@ function oTopbarHTML(v, myT, T) {
 }
 function oBoardHTML(v, myT, T) {
   const can = myT === v.turn, cats = v.cats || [];
+  const P = r => pts(r, v.bi, v.set.dbl);
   let h = `<div class="board${myT === v.turn ? '' : ' locked'}" aria-label="Board ${v.bi + 1}">` + cats.map(c => `<div class="cat">${esc(c)}</div>`).join('');
   for (let r = 0; r < 5; r++) for (let c = 0; c < 5; c++) {
     const x = v.res && v.res[c] ? v.res[c][r] : null, cn = esc(cats[c] || '');
     if (x === null || x === undefined) h += can
-      ? `<button class="tile" id="tile-${c}-${r}" data-act="o-pick" data-c="${c}" data-r="${r}" aria-label="${cn} für ${VALUES[r]} Punkte">${VALUES[r]}</button>`
-      : `<div class="tile" id="tile-${c}-${r}">${VALUES[r]}</div>`;
-    else if (x >= 0) { const t = T(x); h += `<div class="tile taken" style="--c:${t.c}" title="${cn} ${VALUES[r]}: ${esc(t.n)}"><span>${esc(short(t.n))}</span></div>`; }
-    else h += `<div class="tile void" title="${cn} ${VALUES[r]}: niemand">–</div>`;
+      ? `<button class="tile" id="tile-${c}-${r}" data-act="o-pick" data-c="${c}" data-r="${r}" aria-label="${cn} für ${P(r)} Punkte">${P(r)}</button>`
+      : `<div class="tile" id="tile-${c}-${r}">${P(r)}</div>`;
+    else if (x >= 0) { const t = T(x); h += `<div class="tile taken" style="--c:${t.c}" title="${cn} ${P(r)}: ${esc(t.n)}"><span>${esc(short(t.n))}</span></div>`; }
+    else h += `<div class="tile void" title="${cn} ${P(r)}: niemand">–</div>`;
   }
   return h + '</div>';
 }
@@ -2688,7 +2984,7 @@ function oQuestionHTML(v, myT, T) {
   const sending = '<p class="buzzhint">Wird übermittelt …</p>';
   const isMod = !!v.set.mod && on.role === 'host';
   const modSol = isMod && c.a ? `<div class="answer" id="o-mod-sol"><span class="lbl">Lösung, nur für dich</span><span class="val">${esc(c.a)}</span></div>` : '';
-  let who = '', body = `<p class="qtext">${esc(c.q)}</p>`, foot = '';
+  let who = '', body = `<p class="qtext">${esc(c.q)}</p>${Array.isArray(c.m) ? '<div class="mslot" id="media-slot"></div>' : ''}`, foot = '';
   if (c.st === 'answer') {
     const at = T(c.at), mine = myT === c.at, isBuzz = c.at !== v.turn;
     who = pill(at, isBuzz ? `${at.n} hat gebuzzert` : `${at.n} antwortet`);
@@ -2865,6 +3161,7 @@ document.addEventListener('click', e => {
     case 'cat-none': prefs.off = poolAll().map(c => c.id); catsChanged(); break;
     case 'timer': prefs.timer = Number(el.dataset.v); savePrefs(); render(); break;
     case 'penalty': prefs.penalty = el.dataset.v === '1'; savePrefs(); render(); break;
+    case 'dbl': prefs.dbl = el.dataset.v === '1'; savePrefs(); render(); break;
     case 'sound': prefs.sound = el.dataset.v === '1'; savePrefs(); render(); break;
     case 'boards': {
       const r = boardRange();
@@ -2892,11 +3189,13 @@ document.addEventListener('click', e => {
     case 'ed-export': openExport(); break;
     /* Eigene Boards */
     case 'ownb-import': openBoardImport(); break;
-    case 'bimp-run': if (importBoards()) catsChanged(); break;
+    case 'bimp-run': importBoards().then(ok => { if (ok) catsChanged(); }); break;
+    case 'mu-retry': mu.st = 'idle'; mu.err = ''; muSync(); render(); break;
+    case 'mu-skip': mu.skip = true; mu.gen++; mu.st = 'idle'; oBump(); break;
     case 'ownb-toggle': { const b = ownBoards.find(x => x.id === el.dataset.id); if (b) { b.on = !b.on; saveBoards(); catsChanged(); } break; }
     case 'ownb-del': {
       const b = ownBoards.find(x => x.id === el.dataset.id); if (!b) break;
-      confirmBox('Board löschen?', `„${b.name}“ wird mit allen Fragen aus diesem Browser gelöscht.`, 'Löschen', () => { ownBoards = ownBoards.filter(x => x !== b); saveBoards(); catsChanged(); });
+      confirmBox('Board löschen?', `„${b.name}“ wird mit allen Fragen aus diesem Browser gelöscht.`, 'Löschen', () => { ownBoards = ownBoards.filter(x => x !== b); saveBoards(); mediaDropUnused(boardMedia(b).map(m => m.k)); catsChanged(); });
       break;
     }
     case 'imp-run': {
@@ -2945,7 +3244,7 @@ document.addEventListener('click', e => {
     case 'o-create': oCreate(); break;
     case 'o-join': oJoin(el.dataset.game); break;
     case 'o-resume': if (savedOnline) oResume(savedOnline); break;
-    case 'o-discard': confirmBox('Online-Spiel beenden?', 'Das gespeicherte Online-Spiel wird gelöscht.', 'Beenden', () => { savedOnline = null; store.set(K.online, null); render(); }); break;
+    case 'o-discard': confirmBox('Online-Spiel beenden?', 'Das gespeicherte Online-Spiel wird gelöscht.', 'Beenden', () => { mediaCleanup(savedOnline); savedOnline = null; store.set(K.online, null); render(); }); break;
     case 'o-leave': oLeaveAsk(); break;
     case 'cam': camToggle(); break;
     case 'cam-err-x': cam.err = ''; render(); break;
@@ -3270,7 +3569,7 @@ setInterval(() => {
 function viewState() {
   const g = game, d = g.dyn, b = g.boards[d.bi];
   const v = {
-    ver: d.ver, ph: d.phase, bi: d.bi, bn: g.boards.length, pen: g.settings.penalty,
+    ver: d.ver, ph: d.phase, bi: d.bi, bn: g.boards.length, pen: g.settings.penalty, dbl: g.settings.dbl ? 1 : 0,
     cats: b.cats.map(c => c.name), res: d.res[d.bi],
     teams: g.teams.map((t, i) => ({ n: t.name, c: t.color, s: d.scores[i] })), turn: d.turn, cur: null
   };
@@ -3353,7 +3652,7 @@ function remoteHTML() {
     let grid = cats.map(c => `<span class="c">${esc(c)}</span>`).join('');
     for (let r = 0; r < 5; r++) for (let c = 0; c < 5; c++) {
       const x = v.res && v.res[c] ? v.res[c][r] : null;
-      if (x === null || x === undefined) grid += `<button class="t" data-act="pick" data-c="${c}" data-r="${r}" ${dis} aria-label="${esc(cats[c] || '')} für ${VALUES[r]}">${VALUES[r]}</button>`;
+      if (x === null || x === undefined) grid += `<button class="t" data-act="pick" data-c="${c}" data-r="${r}" ${dis} aria-label="${esc(cats[c] || '')} für ${pts(r, v.bi, v.dbl)}">${pts(r, v.bi, v.dbl)}</button>`;
       else if (x >= 0) grid += `<span class="t won" style="--c:${col(T(x).c)}" title="${esc(T(x).n)}"></span>`;
       else grid += '<span class="t used">–</span>';
     }

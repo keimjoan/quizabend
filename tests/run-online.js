@@ -17,7 +17,7 @@ const MEASURE = url => {
   WebSocket.prototype.send = function (s) {
     try {
       const m = JSON.parse(s), n = x => new TextEncoder().encode(JSON.stringify(x)).length;
-      if (m.t === 'emit') window.__maxEmit = Math.max(window.__maxEmit || 0, n(m.data));
+      if (m.t === 'emit') { window.__maxEmit = Math.max(window.__maxEmit || 0, n(m.data)); (window.__emits = window.__emits || []).push(JSON.stringify(m.data)); }
       if (m.t === 'presence') window.__maxPresence = Math.max(window.__maxPresence || 0, n(m.p));
     } catch (e) { /* kein JSON */ }
     return send.call(this, s);
@@ -52,6 +52,7 @@ const MOCK = `(() => {
       const s = JSON.stringify(data);
       if (bytes(s) > 4096) return Promise.reject({ code: 'invalid_argument', message: 'too big ' + bytes(s) });
       window.__maxEmit = Math.max(window.__maxEmit || 0, bytes(s));
+      (window.__emits = window.__emits || []).push(s);
       setTimeout(() => (handlers[topic] || []).forEach(fn => fn({ topic, data: JSON.parse(s), peer: me, by: null, isMe: true, sameTab: true, kind: 'viewer', guest: false })), 0);
       out({ kind: 'emit', topic, data: JSON.parse(s), from: me });
       return Promise.resolve();
@@ -78,6 +79,58 @@ const MOCK = `(() => {
   window.__peerId = me;
 })();`;
 
+// Nachgestellter Medien-Speicher (nur beim nachgebauten Raum). Mit --server läuft alles gegen den echten Raum-Server.
+const mediaStore = new Map(); // id → { del, t, ct, size, parts: Map, buf }
+const MEDIA_PART = 20 * 1048576;
+const MEDIA_HOST = ROOM_URL ? ROOM_URL.replace(/^ws/, 'http') : 'http://media.test';
+const rid24 = () => Array.from({ length: 24 }, () => 'abcdefghijklmnopqrstuvwxyz0123456789'[Math.floor(Math.random() * 36)]).join('');
+function sniffKind(b) {
+  if (b[0] === 0x89 && b[1] === 0x50) return { t: 'bild', ct: 'image/png' };
+  if (b.slice(0, 4).toString() === 'RIFF') return { t: 'audio', ct: 'audio/wav' };
+  if (b.slice(4, 8).toString() === 'ftyp') return { t: 'video', ct: 'video/mp4' };
+  return null;
+}
+const mediaRoute = async route => {
+  const req = route.request(), u = new URL(req.url()), m = req.method();
+  const cors = { 'access-control-allow-origin': '*', 'access-control-allow-headers': 'content-type', 'access-control-allow-methods': 'GET, HEAD, POST, PUT, OPTIONS' };
+  const json = (o, status = 200) => route.fulfill({ status, headers: { ...cors, 'content-type': 'application/json' }, body: JSON.stringify(o) });
+  if (m === 'OPTIONS') return route.fulfill({ status: 204, headers: cors });
+  let x;
+  if (m === 'POST' && u.pathname === '/medien-loeschen') {
+    let n = 0;
+    for (const [id, del] of JSON.parse(req.postData() || '[]')) { const e = mediaStore.get(id); if (e && e.del === del) { mediaStore.delete(id); n++; } }
+    return json({ geloescht: n });
+  }
+  if (m === 'POST' && (x = u.pathname.match(/^\/medien\/([a-z0-9]{4,16})$/))) {
+    const buf = req.postDataBuffer(), size = Number(u.searchParams.get('size')), kind = sniffKind(buf);
+    if (!kind || buf.length !== Math.min(size, MEDIA_PART)) return json({ fehler: 'abgelehnt' }, 415);
+    const id = rid24(), e = { del: rid24(), t: kind.t, ct: kind.ct, size, parts: new Map([[1, buf]]), buf: null };
+    mediaStore.set(id, e);
+    if (size <= MEDIA_PART) { e.buf = buf; return json({ id, del: e.del, t: kind.t, done: true }); }
+    return json({ id, del: e.del, t: kind.t, etag: 'e1', done: false });
+  }
+  if (m === 'PUT' && (x = u.pathname.match(/^\/medien\/([a-z0-9]{24})\/(\d+)$/))) {
+    const e = mediaStore.get(x[1]);
+    if (!e || e.del !== u.searchParams.get('del')) return json({ fehler: 'unbekannt' }, 404);
+    e.parts.set(Number(x[2]), req.postDataBuffer());
+    return json({ n: Number(x[2]), etag: 'e' + x[2] });
+  }
+  if (m === 'POST' && (x = u.pathname.match(/^\/medien\/([a-z0-9]{24})\/fertig$/))) {
+    const e = mediaStore.get(x[1]), b = JSON.parse(req.postData() || '{}');
+    if (!e || e.del !== b.del || b.parts.length !== Math.ceil(e.size / MEDIA_PART)) return json({ fehler: 'unvollständig' }, 400);
+    e.buf = Buffer.concat([...e.parts.entries()].sort((a, c) => a[0] - c[0]).map(p => p[1]));
+    if (e.buf.length !== e.size) return json({ fehler: 'Größe' }, 400);
+    return json({ done: true, t: e.t });
+  }
+  if ((m === 'GET' || m === 'HEAD') && (x = u.pathname.match(/^\/medien\/([a-z0-9]{24})$/))) {
+    const e = mediaStore.get(x[1]);
+    if (!e || !e.buf) return route.fulfill({ status: 404, headers: cors, body: 'Nicht gefunden' });
+    return route.fulfill({ status: 200, headers: { ...cors, 'content-type': e.ct, 'accept-ranges': 'bytes' }, body: e.buf });
+  }
+  return route.fulfill({ status: 404, headers: cors, body: 'Nicht gefunden' });
+};
+const mediaGone = async id => ROOM_URL ? (await fetch(`${MEDIA_HOST}/medien/${id}`)).status === 404 : !mediaStore.has(id);
+
 (async () => {
   fs.mkdirSync(SHOTS, { recursive: true });
   const server = await startServer();
@@ -99,6 +152,7 @@ const MOCK = `(() => {
       await ctx.exposeBinding('__relayOut', ({ page }, s) => relay(page, s));
     }
     await ctx.addInitScript(() => { window.QUIZ_ICE = []; }); // keine STUN-Server im Test, die Browser finden sich lokal
+    if (!ROOM_URL) { await ctx.addInitScript(() => { window.QUIZ_MEDIA_URL = 'http://media.test'; }); await ctx.route('http://media.test/**', mediaRoute); }
     const page = await ctx.newPage();
     // Im KI-Test scheitern Anfragen an die nachgestellte API mit Absicht (falscher Schlüssel, Ausfall)
     page.on('console', m => { if (m.type() === 'error' && !(tag.startsWith('ki-') && /Failed to load resource/.test(m.text()))) errors.push(`${tag} console: ${m.text()}`); });
@@ -141,6 +195,10 @@ const MOCK = `(() => {
   g = await hostState();
   if (g.set.boards > 2) { while ((await hostState()).set.boards > 2) await host.click('#ob-minus'); }
   if ((await hostState()).set.boards < 2) await host.click('#ob-plus');
+  assert(await host.isVisible('#od-1'), 'Online-Lobby: Schalter für doppelte Punkte sichtbar');
+  await host.click('#od-1');
+  await lea.waitForSelector('.summary-list:has-text("doppelt")', { timeout: 5000 });
+  assert((await hostState()).set.dbl === true, 'Doppelte Punkte eingestellt, Mitspieler sehen es');
   await host.screenshot({ path: `${SHOTS}/31-online-lobby-host.png`, fullPage: true });
   await lea.screenshot({ path: `${SHOTS}/32-online-lobby-player.png`, fullPage: true });
   await host.click('#o-start');
@@ -248,6 +306,22 @@ const MOCK = `(() => {
   for (const p of pages) await p.waitForSelector('.board');
   g = await hostState();
   assert(g.ph === 'board' && g.bi === 1, 'Board 2 beginnt');
+  // Doppelte Punkte: Board 2 zählt doppelt (400er Frage = 800)
+  {
+    const who = g.turn, tp2 = pages[who], oth2 = pages.filter((_, i) => i !== who);
+    await tp2.waitForSelector('#tile-0-3');
+    assert((await tp2.textContent('#tile-0-0')) === '200' && (await tp2.textContent('#tile-4-4')) === '1000', 'Online: Board 2 zeigt 200 bis 1000 Punkte');
+    await tp2.click('#tile-0-3');
+    await tp2.waitForSelector('#o-ans-in'); await tp2.fill('#o-ans-in', 'Antwort'); await tp2.press('#o-ans-in', 'Enter');
+    await tp2.waitForSelector('#o-claim-yes'); await tp2.click('#o-claim-yes');
+    for (const p of oth2) { await p.waitForSelector('#o-yes'); await p.click('#o-yes'); }
+    await tp2.waitForSelector('#o-next');
+    g = await hostState();
+    exp[who] += 800;
+    assert(g.cur.v === 800 && JSON.stringify(g.sc) === JSON.stringify(exp), 'Online: Frage zählt 800, Punkte ' + g.sc + ' (erwartet ' + exp + ')');
+    await tp2.click('#o-next');
+    await host.waitForSelector('.board');
+  }
   await host.click('#t-menu'); await host.click('[data-act="o-end"]'); await host.click('[data-act="modal-ok"]');
   for (const p of pages) await p.waitForSelector('.finale');
   await lea.waitForTimeout(500);
@@ -259,6 +333,7 @@ const MOCK = `(() => {
   console.log('\n[6] Online in Teams');
   await host.click('#o-lobby');
   await lea.waitForSelector('.lobby');
+  if (await host.isVisible('#od-0')) await host.click('#od-0');
   await host.click('#om-teams');
   await lea.waitForSelector('#ot-join-0');
   await host.click('#ot-join-0');
@@ -520,6 +595,83 @@ const MOCK = `(() => {
   assert(g.boards.length === 1 && g.boards[0].cats.map(c => c.name).join(',') === 'Eigen 1,Eigen 2,Eigen 3,Eigen 4,Eigen 5', 'Online wird das eigene Board gespielt');
   assert((await bl.textContent('.board')).includes('Eigen 3'), 'Mitspieler sehen die eigenen Kategorien');
   await bh.screenshot({ path: `${SHOTS}/70-own-board-online.png` });
+
+  // ---------- [9b] Medien: Der Gastgeber lädt hoch, alle sehen Bild, Ton und Video, am Ende wird gelöscht ----------
+  console.log('\n[9b] Online mit Medien (Bild, Audio, Video)');
+  for (const p of [bh, bl]) await p.close();
+  const uh = await newPlayer('med-host', { width: 1280, height: 800 });
+  await uh.waitForSelector('#me-name'); await uh.fill('#me-name', 'Joan');
+  await uh.click('#o-create'); await uh.waitForSelector('.lobby');
+  const ul = await newPlayer('med-lea', { width: 1280, height: 800 });
+  await ul.waitForSelector('#me-name'); await ul.fill('#me-name', 'Lea');
+  await ul.waitForSelector('[data-act="o-join"]'); await ul.click('[data-act="o-join"]');
+  await uh.waitForFunction(() => document.querySelectorAll('.pchip').length === 2, null, { timeout: 5000 });
+  const uState = () => uh.evaluate(() => JSON.parse(localStorage.getItem('quizabend.online.v1')));
+  while ((await uState()).set.boards > 1) await uh.click('#ob-minus');
+  const mPng = Buffer.from(await uh.evaluate(async () => {
+    const c = document.createElement('canvas'); c.width = 64; c.height = 48;
+    const x = c.getContext('2d'); x.fillStyle = '#39c'; x.fillRect(0, 0, 64, 48);
+    const b = await new Promise(r => c.toBlob(r, 'image/png'));
+    return Array.from(new Uint8Array(await b.arrayBuffer()));
+  }));
+  const mWav = (() => { const d = Buffer.alloc(8000, 128), h = Buffer.alloc(44); h.write('RIFF', 0); h.writeUInt32LE(36 + d.length, 4); h.write('WAVEfmt ', 8); h.writeUInt32LE(16, 16); h.writeUInt16LE(1, 20); h.writeUInt16LE(1, 22); h.writeUInt32LE(8000, 24); h.writeUInt32LE(8000, 28); h.writeUInt16LE(1, 32); h.writeUInt16LE(8, 34); h.write('data', 36); h.writeUInt32LE(d.length, 40); return Buffer.concat([h, d]); })();
+  const mMp4 = Buffer.concat([Buffer.from([0, 0, 0, 0x18]), Buffer.from('ftypisom'), Buffer.alloc(21 * 1048576, 9)]); // über 20 MiB: zwei Teile
+  const mediaJSON = { boards: [{ name: 'Medien-Runde', kategorien: [1, 2, 3, 4, 5].map(k => ({ name: `Ton ${k}`, fragen: VALUES.map(p => ({ punkte: p, frage: `Was ist das ${k}/${p}?`, antwort: `M${k}${p}`, medium: k === 1 && p === 100 ? 'bild.png' : k === 2 && p === 300 ? 'ton.wav' : k === 3 && p === 500 ? 'film.mp4' : undefined })) })) }] };
+  await uh.click('#ownb-import');
+  await uh.fill('#bimp-text', JSON.stringify(mediaJSON));
+  await uh.setInputFiles('#bimp-media', [{ name: 'bild.png', mimeType: 'image/png', buffer: mPng }, { name: 'ton.wav', mimeType: 'audio/wav', buffer: mWav }, { name: 'film.mp4', mimeType: 'video/mp4', buffer: mMp4 }]);
+  await uh.click('#bimp-run');
+  await uh.waitForSelector('.obrow', { timeout: 15000 });
+  await uh.waitForFunction(() => /Alle Medien sind hochgeladen/.test((document.querySelector('#mu-note') || {}).textContent || ''), null, { timeout: 60000 });
+  let ug = await uState();
+  const mIds = Object.values(ug.media || {});
+  assert(mIds.length === 3 && mIds.every(x => /^[a-z0-9]{24}$/.test(x[0]) && x[1]), 'Alle drei Dateien liegen auf dem Server: ' + mIds.map(x => x[2]).join(','));
+  assert(mIds.map(x => x[2]).sort().join(',') === 'audio,bild,video', 'Typen vom Server erkannt');
+  assert(!(await uh.isDisabled('#o-start')), 'Start ist frei, sobald alles hochgeladen ist');
+  await uh.screenshot({ path: `${SHOTS}/75-medien-lobby.png`, fullPage: true });
+  await uh.click('#o-start');
+  for (const p of [uh, ul]) await p.waitForSelector('.board', { timeout: 5000 });
+  const seenB = (await uh.evaluate(() => window.__emits || [])).join('');
+  assert(seenB.length > 100 && !seenB.includes('/medien/') && !mIds.some(x => seenB.includes(x[0])), 'Vor der Frage steht keine Datei-ID in den gesendeten Spielständen');
+  // Frage 1 (Bild): Joan wählt, Lea sieht das Bild vom Server
+  await uh.click('#tile-0-0');
+  await uh.waitForSelector('#o-ans-in'); await ul.waitForSelector('#media-slot img', { timeout: 5000 });
+  await ul.waitForFunction(() => { const i = document.querySelector('#media-slot img'); return i && i.complete && i.naturalWidth === 64; }, null, { timeout: 10000 });
+  assert((await ul.getAttribute('#media-slot img', 'src')).startsWith(MEDIA_HOST + '/medien/'), 'Lea lädt das Bild vom Server');
+  const seenQ = (await uh.evaluate(() => window.__emits || [])).join('');
+  assert(mIds.some(x => seenQ.includes(x[0])) && !mIds.some(x => seenQ.includes(x[1])), 'Erst bei der Frage steht die ID im Spielstand, der Löschschlüssel nie');
+  await uh.waitForFunction(() => { const i = document.querySelector('#media-slot img'); return i && i.complete && i.naturalWidth === 64; }, null, { timeout: 10000 });
+  await ul.screenshot({ path: `${SHOTS}/76-medien-online-bild.png` });
+  await uh.fill('#o-ans-in', 'Antwort'); await uh.press('#o-ans-in', 'Enter');
+  await uh.waitForSelector('#o-claim-yes'); await uh.click('#o-claim-yes');
+  await ul.waitForSelector('#o-yes'); await ul.click('#o-yes');
+  await uh.waitForSelector('#o-next'); await uh.click('#o-next');
+  // Frage 2 (Audio): Lea ist dran, beide sehen und laden den Ton
+  await ul.waitForSelector('button.tile'); await ul.click('#tile-1-2');
+  await ul.waitForSelector('#o-ans-in'); await uh.waitForSelector('#media-slot audio', { timeout: 5000 });
+  await uh.waitForFunction(() => document.querySelector('#media-slot audio').duration > 0.5, null, { timeout: 10000 });
+  assert(true, 'Der Gastgeber lädt den Ton (Dauer erkannt)');
+  await ul.waitForFunction(() => document.querySelector('#media-slot audio').duration > 0.5, null, { timeout: 10000 });
+  await ul.fill('#o-ans-in', 'Ton'); await ul.press('#o-ans-in', 'Enter');
+  await ul.waitForSelector('#o-claim-yes'); await ul.click('#o-claim-yes');
+  await uh.waitForSelector('#o-yes'); await uh.click('#o-yes');
+  await ul.waitForSelector('#o-next'); await ul.click('#o-next');
+  // Frage 3 (Video)
+  await uh.waitForSelector('button.tile'); await uh.click('#tile-2-4');
+  await uh.waitForSelector('#o-ans-in'); await ul.waitForSelector('#media-slot video', { timeout: 5000 });
+  assert((await ul.getAttribute('#media-slot video', 'src')).startsWith(MEDIA_HOST + '/medien/'), 'Lea bekommt das Video vom Server');
+  await uh.fill('#o-ans-in', 'Film'); await uh.press('#o-ans-in', 'Enter');
+  await uh.waitForSelector('#o-claim-yes'); await uh.click('#o-claim-yes');
+  await ul.waitForSelector('#o-yes'); await ul.click('#o-yes');
+  await uh.waitForSelector('#o-next'); await uh.click('#o-next'); await ul.waitForSelector('button.tile');
+  // Ende: alles wird gelöscht
+  await uh.click('#t-menu'); await uh.click('[data-act="o-end"]'); await uh.click('[data-act="modal-ok"]');
+  for (const p of [uh, ul]) await p.waitForSelector('.finale');
+  let gone = false;
+  for (let i = 0; i < 30 && !gone; i++) { gone = (await Promise.all(mIds.map(x => mediaGone(x[0])))).every(Boolean); if (!gone) await uh.waitForTimeout(200); }
+  assert(gone, 'Nach dem Spielende sind alle Dateien vom Server gelöscht');
+  assert(Object.keys((await uState()).media || {}).length === 0, 'Der Gastgeber hat die Schlüssel verworfen');
+  for (const p of [uh, ul]) await p.close();
 
   // ---------- [10] Kameras: Bilder gehen per WebRTC direkt von Browser zu Browser (Chromium mit Testkamera) ----------
   console.log('\n[10] Online mit Kameras');

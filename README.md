@@ -7,6 +7,8 @@ Punkte-Quiz für Freunde: Teams oder jeder für sich, 5 Kategorien × 5 Fragen p
 - Wertung der Antworten im Online-Spiel (Einstellung in der Lobby): selbst bewerten und abstimmen, der Gastgeber moderiert (sieht die Lösungen, entscheidet per Klick und spielt nicht mit) oder ein KI-Spielleiter.
 - Kameras im Online-Spiel: Jeder kann in der Lobby oder über das Kamerasymbol oben seine Kamera einschalten. Die Bilder gehen direkt von Browser zu Browser, kostenlos und ohne Ton. In manchen Netzen (Mobilfunk, Firmen-WLAN) kommt kein Bild an. Am besten klappt es mit bis zu etwa 8 Kameras.
 - KI-Spielleiter (optional): Der Gastgeber kann in der Lobby unter „Wertung der Antworten“ Claude die Antworten prüfen lassen. Dafür trägt er seinen eigenen Claude-API-Schlüssel von platform.claude.com ein und zahlt die Runde selbst. Der Schlüssel bleibt in seinem Browser.
+- Doppelte Punkte: Bei mehr als einem Board lässt sich einstellen, dass ab dem zweiten Board jede Frage doppelt zählt (200 bis 1000 Punkte).
+- Bild, Lied oder Video zu einer Frage: In der Spalte „Medium“ des eigenen Boards steht der Dateiname, die Dateien wählt man beim Import aus. Ein Bildschirm spielt sie direkt vom Gerät. Online lädt der Gastgeber sie nur für die laufende Runde auf den Raum-Server hoch (Video bis 500 MB) und löscht sie am Ende wieder.
 - Eigene Boards: Auf https://keimjoan.github.io/quizabend/boards.html gibt es eine Excel-Vorlage, eine Google-Sheets-Vorlage zum Kopieren, ein Beispiel-Board und einen Claude-Skill, der Boards zu jedem Thema schreibt. Im Spiel unter „Eigene Boards“ auf „Board importieren“ klicken.
 - Doppelklick auf `index.html` öffnet das Spiel im Browser. Der Modus mit Spielleitung funktioniert so direkt.
 - Oder mit Node.js: `npm start`, dann http://localhost:8080 öffnen.
@@ -15,6 +17,7 @@ Punkte-Quiz für Freunde: Teams oder jeder für sich, 5 Kategorien × 5 Fragen p
 ## Neue Version ins Netz stellen
 Änderungen committen und `git push`. GitHub Pages veröffentlicht den Stand von `main` nach etwa einer Minute.
 Den Raum-Server nur neu hochladen, wenn sich `server/` geändert hat: im Ordner `server` `npm install`, dann `npm run deploy`.
+Für die Medien braucht der Raum-Server einmalig einen R2-Speicher: in Cloudflare R2 einschalten, dann im Ordner `server` `npx wrangler r2 bucket create quizabend-medien` und `npx wrangler r2 bucket lifecycle add quizabend-medien nach-einem-tag --expire-days 1 --abort-multipart-days 1`, danach `npm run deploy`.
 
 ## Mit Claude Code weiterbauen
 1. Claude Code installieren. In Windows PowerShell: `irm https://claude.ai/install.ps1 | iex`

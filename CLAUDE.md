@@ -11,13 +11,14 @@ Ein Punkte-Quiz im Browser zum Spielen mit Freunden: Boards mit 5 Kategorien × 
 - Startseite bewusst knapp, so vom Nutzer gewünscht: Spielregeln und Anleitungen stehen nicht auf der Seite, sondern im Ausklappmenü „Spielregeln und Anleitungen“ (`helpMenuHTML()`, Startseite und Lobby). Jeder Punkt öffnet einen Dialog (`HELP`, `helpBody()`, `openHelp()`): Regeln für beide Spielarten, Anleitung KI-Spielleiter mit API-Schlüssel, Anleitung eigene Boards. Die Kategorien-Auswahl ist eingeklappt (`#cats-fold`, `ui.catsOpen`).
 - `vorlagen/`: Excel-Vorlage, Beispiel-Board (.xlsx, .json) und der Claude-Skill als ZIP. Alles außer `vorlagen/skill/quizabend-board/SKILL.md` erzeugt `npm run vorlagen` (Skript `tools/vorlagen.js`, ohne Abhängigkeiten, das Beispiel kommt aus `RAW`). Nach Änderungen am Skill oder am Tabellenformat neu erzeugen.
 - Webapp-Dateien: `manifest.webmanifest`, `icon.svg` und die PNG-Icons daraus (`npm run icons`, Skript `tools/icons.js`), `sw.js` als Offline-Speicher (erst Netz, sonst Speicher). `sw.js` wird nur über https und außerhalb von Claude registriert.
-- `server/` ist der Raum-Server für den Online-Modus (Cloudflare Worker mit Durable Object, eigene `package.json` mit Wrangler).
+- `server/` ist der Raum-Server für den Online-Modus (Cloudflare Worker mit Durable Object, eigene `package.json` mit Wrangler). Seit den Medien gehört ein R2-Speicher (`quizabend-medien`) und ein Zähler-Objekt (`Quota`) dazu, siehe „Medien in Fragen“.
 - `tests/` enthält zwei Playwright-Tests, die komplette Spiele durchspielen und die Punkte nachrechnen.
 
 ## Veröffentlichung
 
 - Seite: GitHub Pages aus dem Repo `keimjoan/quizabend`, Zweig `main`, Ordner `/` (mit `.nojekyll`). Adresse: https://keimjoan.github.io/quizabend/. Jeder Push auf `main` geht nach etwa einer Minute online.
 - Raum-Server: Cloudflare-Konto des Nutzers, Worker `quizabend-raum`, Adresse `wss://quizabend-raum.quizabend-raum.workers.dev` (steht als `ROOM_SERVER` in `index.html`). Neu bereitstellen: im Ordner `server` `npm install`, dann `npx wrangler login` (einmalig, der Nutzer klickt im Browser auf „Allow“) und `npm run deploy`. Kostenloser Tarif reicht.
+- Medienspeicher (R2, einmalig): im Ordner `server` `npx wrangler r2 bucket create quizabend-medien` und die Löschregel `npx wrangler r2 bucket lifecycle add quizabend-medien nach-einem-tag --expire-days 1 --abort-multipart-days 1`, dann `npm run deploy`. R2 muss vorher im Cloudflare-Konto des Nutzers eingeschaltet sein (kann eine Zahlungsmethode verlangen, die Gratisgrenzen reichen). Ohne R2-Bindung antwortet der Server auf Medien mit 503, das Spiel läuft dann ohne Medien.
 
 ## Spielregeln
 
@@ -27,11 +28,12 @@ Ein Punkte-Quiz im Browser zum Spielen mit Freunden: Boards mit 5 Kategorien × 
 - Der Zug geht strikt reihum. Ist ein Board leer, kommt das nächste.
 - Die Spielleitung bewertet per Klick. Die Lösung sieht sie über „Lösung spicken“ oder auf dem Handy („Als Spielleitung verbinden“).
 - Rückgängig (Strg+Z), Punkte von Hand anpassen, optionale Antwortzeit, Spielstand übersteht Neuladen.
+- Doppelte Punkte (Einstellung „Punkte ab dem zweiten Board“, `prefs.dbl`, im Spiel `settings.dbl`): Bei mehr als einem Board zählt jede Frage ab Board 2 doppelt (200 bis 1000 Punkte). Alles läuft über `pts(r, bi, dbl)`, `cur.v` trägt den Wert, der Abzug (halbe Punkte, volle Punkte bei abgelehnter Abstimmung) folgt daraus. Import, Export und Vorlagen bleiben bei 100 bis 500. Online heißt die Einstellung `g.set.dbl` und steht als `set.dbl` in der Ansicht.
 
 ### Eigene Boards (beide Spielarten)
 - Ein eigenes Board ist ein fester Satz aus 5 Kategorien (`ownBoards`, gespeichert unter `quizabend.boards.v1`, höchstens 30). Ausgewählte eigene Boards werden zuerst gespielt, in ihrer Reihenfolge, danach zufällige aus den Kategorien (`gameBoards()`, `boardRange()`). Online importiert nur der Gastgeber, die Ansicht trägt die Anzahl als `set.no`.
 - Import (`parseBoards()`): Excel-Datei (.xlsx, gelesen ohne Bibliothek in `xlsxSheets()`), CSV mit Komma oder Semikolon, eingefügte Zellen aus Excel oder Google Sheets, oder JSON `{"boards": [{"name", "kategorien": [{"name", "fragen": [{"punkte", "frage", "antwort"}]}]}]}` (Format des Claude-Skills).
-- Tabellenformat: Kopfzeile Board, Kategorie, Punkte, Frage, Antwort (Board optional, sonst Dateiname). Board und Kategorie gelten nach unten weiter. Jede Kategorie braucht genau 5 Fragen, jedes Board genau 5 Kategorien, sonst nennt die Fehlermeldung die Stelle.
+- Tabellenformat: Kopfzeile Board, Kategorie, Punkte, Frage, Antwort und freiwillig Medium (Board optional, sonst Dateiname). Board und Kategorie gelten nach unten weiter. Jede Kategorie braucht genau 5 Fragen, jedes Board genau 5 Kategorien, sonst nennt die Fehlermeldung die Stelle.
 
 ### Online, jeder am eigenen PC (Reiter „Online, jeder am eigenen PC“)
 - Ein Gastgeber eröffnet eine Lobby und spielt mit, alle anderen melden sich mit ihrem Namen an (bis 12). Beim Start einstellbar: jeder für sich oder Teams (2 bis 6).
@@ -43,6 +45,16 @@ Ein Punkte-Quiz im Browser zum Spielen mit Freunden: Boards mit 5 Kategorien × 
 - Einstellung „Wertung der Antworten“ in der Lobby, drei Möglichkeiten: „Selbst bewerten und abstimmen“ (Standard, Ablauf oben), „Ich moderiere“ und „KI-Spielleiter“ (`g.set.mod` und `g.set.ki`, höchstens eins davon an).
 - Gastgeber moderiert: Der Gastgeber ist Spielleitung und spielt nicht mit (kein Team, `p.t` ist `null`, kann keine Frage wählen und nicht buzzern). Er sieht bei jeder Frage die Lösung, nur in seiner eigenen Ansicht (`oView(true)`), nie im verschickten Spielstand. Nach jeder Antwort entscheidet er per Klick (Zustand `mod`, Eingabe `mod`, nur vom Gastgeber angenommen): Richtig gibt die vollen Punkte und beendet die Frage, falsch kostet die Hälfte wie in Schritt 4, dann buzzern die anderen. Keine Zeitgrenze für die Entscheidung.
 - KI-Spielleiter: Statt Schritt 2 bis 4 prüft Claude die getippte Antwort gegen die Musterlösung. Richtig: volle Punkte, die Frage ist vorbei, ohne Abstimmung. Falsch: halbe Punkte Abzug, dann buzzern die anderen wie in Schritt 4, und auch die Buzzer-Antwort prüft die KI. Den Kommentar der KI sehen alle erst nach der Auflösung. Antwortet die KI nicht (Ausfall, abgelehnter Schlüssel, 25 Sekunden), läuft diese eine Antwort nach den normalen Regeln.
+
+## Medien in Fragen (Bild, Audio, Video)
+
+- Vom Nutzer so entschieden: Dateien werden auf den eigenen Cloudflare-Server hochgeladen, aber nur für die laufende Online-Runde und danach gelöscht. Videos bis 500 MB, Audio bis 50 MB, Bilder bis 5 MB.
+- Import: Spalte „Medium“ (Excel, CSV, eingefügte Zellen) oder JSON-Feld `medium` nennt nur den Dateinamen. Im Import-Dialog wählt man die Dateien unter „Mediendateien“ aus (`attachMedia()`, `storeMedia()`). Links gehen bewusst nicht. Der Dateityp wird am Dateianfang erkannt (`mediaSniff()`, gleiche Regeln in `server/worker.js`), Bilder werden auf 1600 Pixel verkleinert (`shrinkImage()`). Videos müssen MP4 oder WebM sein, MOV und MKV lehnt der Import ab.
+- Die Dateien liegen im Browser in IndexedDB (`quizabend-medien`, Speicher `d`, Schlüssel `Name|Größe|Änderungsdatum`). Das Board speichert nur den Verweis `m: {t: bild|audio|video, f: Dateiname, k: Schlüssel}` (`cleanM()`). Ein Bildschirm spielt direkt von dort (Blob-Adresse), ohne Server. Löscht man ein Board, räumt `mediaDropUnused()` die Dateien auf.
+- Online (`muSync()`, `muRun()`, `mediaUploadOne()`): Sobald in der Lobby ausgewählte eigene Boards Medien haben, lädt der Gastgeber sie im Hintergrund hoch (Teile zu 20 MiB, drei gleichzeitig). `g.media` hält `{Schlüssel: [id, del, Typ]}` im Spielstand des Gastgebers. `del` ist der geheime Löschschlüssel und darf nie in die Ansicht, die Präsenz oder ein Ereignis. Der Start ist gesperrt, solange Medien fehlen (`muBlocking()`), mit „Ohne Medien starten“ als Ausweg.
+- Die Ansicht trägt nur bei der geöffneten Frage `cur.m = [Typ, id]`. Jeder Browser lädt die Datei über `MEDIA_URL`/medien/<id> (abgeleitet aus `ROOM_URL`, im Test `window.QUIZ_MEDIA_URL`). Das Element liegt fest in `mediaEl` und wandert nach jedem Neuzeichnen in `#media-slot`, damit Ton und Video weiterlaufen. Audio und Video starten per Knopf des Browsers (Autoplay ist gesperrt), nicht gemeinsam.
+- Löschen (`mediaCleanup()`): bei Spielende (`oBump` bei `gameEnd`), beim Zurück in die Lobby, beim Verlassen oder Verwerfen. Schließt der Gastgeber nur den Tab, räumt die R2-Löschregel nach einem Tag auf. Beim Neuladen in der Runde bleiben die IDs im gespeicherten Spielstand erhalten.
+- Server (`server/worker.js`): `POST /medien/<raum>?size=N` (erster Teil), `PUT /medien/<id>/<n>?del=…`, `POST /medien/<id>/fertig`, `POST /medien-loeschen` (Text-JSON `[[id, del], …]`), `GET|HEAD /medien/<id>` mit Bereichsanfragen. Ein Aufruf an einen Worker darf höchstens 100 MB groß sein, darum der Upload in Teilen über den mehrteiligen R2-Upload. Schreiben nur von `keimjoan.github.io`, localhost und file (Origin). Tageszähler (`Quota`) je IP-Adresse (3 GiB, 100 Dateien), Raum (2 GiB, 40 Dateien) und für den ganzen Server (20 GiB, 1000 Dateien). Abruf mit `no-store`, `nosniff` und `sandbox`.
 
 ## Verbindung: Raum von Claude oder eigener Raum-Server
 
@@ -57,7 +69,7 @@ So ist die Verbindung gebaut:
 - Der Gastgeber hält den Spielstand (`on.og`) und verschickt eine kompakte Ansicht als Ereignis `ostate` (unter 4 KiB, siehe `oView()`).
 - Spieler senden Eingaben über ihr Präsenz-Objekt (`team`, `pick`, `ans`, `claim`, `buzz`, `pass`, `vote`, `nx`). Der Gastgeber liest sie in `oProcessPeers()` und wendet sie in `oInput()` an. Jede Eingabe trägt die Fragenummer `qn`, damit alte Eingaben nie doppelt zählen.
 - Benutzt werden nur diese Funktionen des Raums: `emit`, `on`, `presence`, `onPeers`, `onConnection`. `webRoom()` bildet genau diese nach, die Spiellogik weiß nicht, welcher Raum dahinter steckt.
-- Der Raum-Server (`server/worker.js`) speichert nichts. Er leitet Ereignisse und Präsenz an alle anderen im Raum weiter, ein Durable Object pro Raum-Code. Jedes Gerät hat eine feste ID pro Seitenaufruf, bei Neuverbindung bleibt seine Präsenz erhalten. Lebenszeichen alle 25 Sekunden, nach einer Minute Stille verbindet `webRoom()` neu.
+- Der Raum-Server (`server/worker.js`) speichert nichts, außer den Mediendateien der laufenden Runde. Er leitet Ereignisse und Präsenz an alle anderen im Raum weiter, ein Durable Object pro Raum-Code. Jedes Gerät hat eine feste ID pro Seitenaufruf, bei Neuverbindung bleibt seine Präsenz erhalten. Lebenszeichen alle 25 Sekunden, nach einer Minute Stille verbindet `webRoom()` neu.
 
 ## Kameras im Online-Spiel
 
@@ -83,9 +95,9 @@ npx playwright install chromium
 npm test
 ```
 
-- `npm run test:local`: Spiel an einem Bildschirm, eigene Fragen, eigene Boards aus den Vorlagen (Excel, CSV, eingefügte Zellen, JSON), sechs Teams, Handy als Spielleitung.
-- `npm run test:online`: Gastgeber und zwei Spieler in getrennten Browsern, jeder für sich und in Teams, über den nachgebauten Raum (`MOCK`). Danach ein Spiel mit KI-Spielleiter gegen eine nachgestellte Claude-API, ein Spiel, das der Gastgeber moderiert, ein Spiel mit eigenem Board und zuletzt drei Browser mit Testkamera von Chromium, die sich gegenseitig sehen müssen.
-- `npm run test:server`: derselbe Online-Test über den echten Raum-Server. Vorher im Ordner `server` `npm run dev` starten (http://127.0.0.1:8787). Nach Änderungen an `webRoom()` oder `server/` laufen lassen.
+- `npm run test:local`: Spiel an einem Bildschirm, doppelte Punkte, eigene Fragen, eigene Boards aus den Vorlagen (Excel, CSV, eingefügte Zellen, JSON), Medien zu Fragen, sechs Teams, Handy als Spielleitung.
+- `npm run test:online`: Gastgeber und zwei Spieler in getrennten Browsern, jeder für sich und in Teams, über den nachgebauten Raum (`MOCK`). Danach ein Spiel mit KI-Spielleiter gegen eine nachgestellte Claude-API, ein Spiel, das der Gastgeber moderiert, ein Spiel mit eigenem Board, ein Spiel mit Bild, Ton und Video (Medien-Server im Test nachgestellt, mit `--server` der echte), doppelte Punkte im zweiten Board und zuletzt drei Browser mit Testkamera von Chromium, die sich gegenseitig sehen müssen.
+- `npm run test:server`: derselbe Online-Test über den echten Raum-Server (mit lokalem R2 von Wrangler) und danach `tests/run-media-server.js` (Upload in Teilen bis 130 MiB, Abruf mit Bereichen, abgelehnte Typen, Löschen, Tagesgrenze). Vorher im Ordner `server` `npm run dev` starten (http://127.0.0.1:8787). Nach Änderungen an `webRoom()` oder `server/` laufen lassen. Nur den Medientest: `npm run test:media`.
 - Bildschirmfotos landen in `shots/`. Nach jeder Änderung an Spielregeln oder Punkten beide Tests laufen lassen.
 
 ## Gestaltung
